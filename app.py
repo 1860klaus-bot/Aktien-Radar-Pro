@@ -5,92 +5,117 @@ import pandas as pd
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
 st.title("💎 Aktien-Radar: Global (WKN & Ticker)")
 
-# --- WKN DATENBANK (Erweitert: DAX 40 & US Top-Werte) ---
-WKN_MAP = {
-    # --- DEUTSCHLAND (DAX 40 Auszug) ---
-    "A1EWWW": "ADS.DE",   "ADIDAS": "ADS.DE",
-    "840400": "ALV.DE",   "ALLIANZ": "ALV.DE",
-    "BASF11": "BAS.DE",   "BASF": "BAS.DE",
-    "BAY001": "BAYN.DE",  "BAYER": "BAYN.DE",
-    "520000": "BEI.DE",   "BEIERSDORF": "BEI.DE",
-    "519000": "BMW.DE",   "BMW": "BMW.DE",
-    "543900": "CON.DE",   "CONTINENTAL": "CON.DE",
-    "CBK100": "CBK.DE",   "COMMERZBANK": "CBK.DE",
-    "514000": "DBK.DE",   "DEUTSCHE BANK": "DBK.DE",
-    "581005": "DB1.DE",   "DEUTSCHE BOERSE": "DB1.DE",
-    "555750": "DTE.DE",   "TELEKOM": "DTE.DE",
-    "DTR0CK": "DTG.DE",   "DAIMLER TRUCK": "DTG.DE",
-    "ENAG99": "EOAN.DE",  "EON": "EOAN.DE",
-    "604843": "HEN3.DE",  "HENKEL": "HEN3.DE",
-    "623100": "IFX.DE",   "INFINEON": "IFX.DE",
-    "710000": "MBG.DE",   "MERCEDES": "MBG.DE",
-    "843002": "MUV2.DE",  "MUENCHENER RUECK": "MUV2.DE",
-    "PAG911": "P911.DE",  "PORSCHE": "P911.DE",
-    "703712": "RWE.DE",   "RWE": "RWE.DE",
-    "716460": "SAP.DE",   "SAP": "SAP.DE",
-    "723610": "SIE.DE",   "SIEMENS": "SIE.DE",
-    "SHL100": "SHL.DE",   "SIEMENS HEALTHINEERS": "SHL.DE",
-    "766403": "VOW3.DE",  "VW": "VOW3.DE",
-    "A1ML7J": "VNA.DE",   "VONOVIA": "VNA.DE",
-    "938914": "AIR.DE",   "AIRBUS": "AIR.DE", # Oft in DE gehandelt
+# --- 1. DATENBANKEN ---
+# Listen für die Buttons
+DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
+US_TECH_LISTE = "865985, 870747, 906866, A1CX3T, 918422, A14Y6F, A1JWVX, 552484, A14R7U, A1J5X3, A2QP7J, 851399"
+GLOBAL_TOP_LISTE = "865985, 870747, 918422, 716460, 723610, 840400, 850663, 856958, A0M240, 850517"
 
-    # --- USA (Tech & Blue Chips - WKN zu US-Ticker) ---
-    "865985": "AAPL",     "APPLE": "AAPL",
-    "870747": "MSFT",     "MICROSOFT": "MSFT",
-    "906866": "AMZN",     "AMAZON": "AMZN",
-    "A1CX3T": "TSLA",     "TESLA": "TSLA",
-    "918422": "NVDA",     "NVIDIA": "NVDA",
-    "A14Y6F": "GOOGL",    "ALPHABET A": "GOOGL",
-    "A14Y6H": "GOOG",     "ALPHABET C": "GOOG",
-    "A1JWVX": "META",     "META": "META",
-    "552484": "NFLX",     "NETFLIX": "NFLX",
-    "A14R7U": "PYPL",     "PAYPAL": "PYPL",
-    "A1J5X3": "ANGI",     "ANGI": "ANGI",
-    "850663": "KO",       "COCA COLA": "KO",
-    "856958": "MCD",      "MCDONALDS": "MCD",
-    "A0M240": "V",        "VISA": "V",
-    "851399": "IBM",      "IBM": "IBM",
-    "860853": "DIS",      "DISNEY": "DIS",
-    "850517": "JPM",      "JP MORGAN": "JPM",
-    "A0YJQ2": "BRK-B",    "BERKSHIRE": "BRK-B"
+# Übersetzer: WKN/Name -> Ticker
+WKN_MAP = {
+    # DAX (Auszug)
+    "716460": "SAP.DE", "SAP": "SAP.DE",
+    "723610": "SIE.DE", "SIEMENS": "SIE.DE",
+    "840400": "ALV.DE", "ALLIANZ": "ALV.DE",
+    "710000": "MBG.DE", "MERCEDES": "MBG.DE",
+    "766403": "VOW3.DE", "VW": "VOW3.DE", "VOLKSWAGEN": "VOW3.DE",
+    "555750": "DTE.DE", "TELEKOM": "DTE.DE",
+    "BASF11": "BAS.DE", "BASF": "BAS.DE",
+    "BAY001": "BAYN.DE", "BAYER": "BAYN.DE",
+    "519000": "BMW.DE", "BMW": "BMW.DE",
+    "543900": "CON.DE", "CONTINENTAL": "CON.DE",
+    "CBK100": "CBK.DE", "COMMERZBANK": "CBK.DE",
+    "514000": "DBK.DE", "DEUTSCHE BANK": "DBK.DE",
+    "581005": "DB1.DE", "DEUTSCHE BOERSE": "DB1.DE",
+    "DTR0CK": "DTG.DE", "DAIMLER TRUCK": "DTG.DE",
+    "ENAG99": "EOAN.DE", "EON": "EOAN.DE",
+    "A1EWWW": "ADS.DE", "ADIDAS": "ADS.DE",
+    "604843": "HEN3.DE", "HENKEL": "HEN3.DE",
+    "623100": "IFX.DE", "INFINEON": "IFX.DE",
+    "843002": "MUV2.DE", "MUENCHENER RUECK": "MUV2.DE",
+    "PAG911": "P911.DE", "PORSCHE": "P911.DE",
+    "703712": "RWE.DE", "RWE": "RWE.DE",
+    "SHL100": "SHL.DE", "SIEMENS HEALTH": "SHL.DE",
+    "A1ML7J": "VNA.DE", "VONOVIA": "VNA.DE",
+    "938914": "AIR.DE", "AIRBUS": "AIR.DE",
+    # US & International
+    "865985": "AAPL", "APPLE": "AAPL",
+    "870747": "MSFT", "MICROSOFT": "MSFT",
+    "906866": "AMZN", "AMAZON": "AMZN",
+    "A1CX3T": "TSLA", "TESLA": "TSLA",
+    "918422": "NVDA", "NVIDIA": "NVDA",
+    "A14Y6F": "GOOGL", "ALPHABET": "GOOGL", "GOOGLE": "GOOGL",
+    "A1JWVX": "META", "META": "META", "FACEBOOK": "META",
+    "552484": "NFLX", "NETFLIX": "NFLX",
+    "A14R7U": "PYPL", "PAYPAL": "PYPL",
+    "A1J5X3": "ANGI", "ANGI": "ANGI",
+    "A2QP7J": "GME", "GAMESTOP": "GME",
+    "850663": "KO", "COCA COLA": "KO",
+    "856958": "MCD", "MCDONALDS": "MCD",
+    "A0M240": "V", "VISA": "V",
+    "851399": "IBM", "IBM": "IBM",
+    "860853": "DIS", "DISNEY": "DIS",
+    "850517": "JPM", "JP MORGAN": "JPM",
+    "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
 }
 
-# Seitenleiste
-st.sidebar.header("Filter-Einstellungen")
-st.sidebar.info("💡 **Erweiterte WKN Suche!**\nUnterstützt jetzt fast alle DAX-Konzerne und die großen US-Tech-Werte.")
+# --- 2. SEITENLEISTE MIT LOGIK ---
+st.sidebar.header("1. Listen laden")
+# Session State initialisieren, damit das Textfeld aktualisiert werden kann
+if 'ticker_text' not in st.session_state:
+    st.session_state['ticker_text'] = "716460, 865985, NVDA, ANGI"
 
-# Standard-Liste (Mix aus DE & US)
-default_inputs = "716460, 723610, 840400, 865985, 918422, A1CX3T, A1J5X3, 906866"
-ticker_input = st.sidebar.text_area("Aktien-Liste (WKN oder Kürzel)", default_inputs, height=150)
+# Buttons zum Laden der Listen
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    if st.button("🇩🇪 DAX Liste"):
+        st.session_state['ticker_text'] = DAX_LISTE
+with col2:
+    if st.button("🇺🇸 US Tech"):
+        st.session_state['ticker_text'] = US_TECH_LISTE
+
+if st.sidebar.button("🌍 Global Top 10"):
+    st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
+
+st.sidebar.header("2. Manuelle Eingabe")
+ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", 
+                                    value=st.session_state['ticker_text'], 
+                                    height=150)
+
+st.sidebar.header("3. Filter")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 
-# Button zum Aktualisieren
-if st.sidebar.button("🔄 Kurse prüfen"):
-    # Eingabe verarbeiten und WKNs übersetzen
+# --- 3. HAUPTPROGRAMM ---
+if st.button("🚀 Scanner starten", type="primary"):
+    
+    # Eingabe säubern und übersetzen
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
     
-    # Übersetzungsschleife
+    # Intelligente Übersetzung
     for item in raw_inputs:
         if item in WKN_MAP:
             tickers.append(WKN_MAP[item])
         else:
-            tickers.append(item) # Wenn nicht in WKN Liste, versuchen wir es als Ticker
+            tickers.append(item) # Unbekannte Eingabe wird als Ticker versucht
             
     results = []
     news_data = {}
     status_text = st.empty()
+    progress_bar = st.progress(0)
     
-    for ticker in tickers:
-        status_text.text(f"Lade Daten: {ticker}...")
+    total_tickers = len(tickers)
+    
+    for i, ticker in enumerate(tickers):
+        status_text.text(f"Analysiere ({i+1}/{total_tickers}): {ticker}...")
         try:
             stock = yf.Ticker(ticker)
             
-            # 1. Historie laden
+            # Historie laden (300 Tage für stabilen RSI)
             df_hist = stock.history(period="300d")
             
             if not df_hist.empty and len(df_hist) > 14:
-                # RSI Berechnung (Wilder's Smoothing)
+                # RSI Wilder's Smoothing
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -98,10 +123,10 @@ if st.sidebar.button("🔄 Kurse prüfen"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # 2. Fundamentaldaten & Währung
+                # Fundamentaldaten
                 info = stock.info
-                currency = info.get('currency', '???')
-                name = info.get('shortName', ticker)
+                name = info.get('shortName') or info.get('longName') or ticker
+                currency = info.get('currency', '?')
                 
                 # Preise
                 current_price = info.get('currentPrice') or info.get('regularMarketPrice') or df_hist['Close'].iloc[-1]
@@ -110,17 +135,11 @@ if st.sidebar.button("🔄 Kurse prüfen"):
                 
                 # Kursziele
                 target = info.get('targetMeanPrice', 0)
-                upside = 0
-                if target and current_price:
-                    upside = ((target - current_price) / current_price) * 100
+                upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
                 
-                # Umsatz & Wachstum
+                # Wachstum & PEG
                 rev_growth = info.get('revenueGrowth', 0) 
-                
-                # PEG Ratio
-                peg_ratio = info.get('pegRatio')
-                if peg_ratio is None:
-                    peg_ratio = info.get('trailingPegRatio')
+                peg_ratio = info.get('pegRatio') or info.get('trailingPegRatio')
                 
                 # Gewinn (letztes Quartal)
                 try:
@@ -128,25 +147,21 @@ if st.sidebar.button("🔄 Kurse prüfen"):
                 except:
                     last_q_profit = None
 
-                # Bewertung-Status
+                # Bewertung
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
                 if upside < 0: status = "Überbewertet"
 
-                # Filter anwenden
                 if rsi_val <= rsi_limit:
                     # Formatierung
                     peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
-                    if peg_ratio is None:
-                         fwd_pe = info.get('forwardPE')
-                         if fwd_pe is None or fwd_pe < 0: peg_display = "Verlust"
-
+                    if peg_ratio is None and info.get('forwardPE', -1) < 0: peg_display = "Verlust"
+                    
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
                     results.append({
                         "Name": name, 
                         "Kürzel": ticker,
-                        "Kurs": round(current_price, 2),
-                        "Währung": currency,
+                        "Kurs": f"{round(current_price, 2)} {currency}",
                         "Trend": f"{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
                         "Umsatz-Wachst.": growth_display, 
@@ -155,27 +170,28 @@ if st.sidebar.button("🔄 Kurse prüfen"):
                         "Bewertung": status
                     })
                     
-                    # News-Abruf
+                    # News
                     try:
-                        ticker_news = stock.news
-                        if ticker_news:
-                            news_data[ticker] = ticker_news[:3]
-                        else:
-                            news_data[ticker] = []
+                        news_data[ticker] = stock.news[:3] if stock.news else []
                     except:
                         news_data[ticker] = []
-        except Exception as e:
+                        
+        except Exception:
             continue
+        
+        # Fortschrittsbalken
+        progress_bar.progress((i + 1) / total_tickers)
             
     status_text.empty()
+    progress_bar.empty()
     
     if results:
-        st.subheader("🌍 Globale Marktübersicht")
+        st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
         df_res = pd.DataFrame(results)
         
         # Styling
         def style_change(val):
-            if isinstance(val, str) and "%" in val:
+            if "%" in str(val):
                 num = float(val.strip('%'))
                 return 'color: green' if num > 0 else 'color: red'
             return ''
@@ -191,11 +207,10 @@ if st.sidebar.button("🔄 Kurse prüfen"):
             return ''
 
         def style_peg(val):
+            if val == "Verlust": return 'color: red'
             try:
-                if val == "Verlust": return 'color: red'
-                num = float(val)
-                if num > 1: return 'color: red'
-                elif num > 0: return 'color: green'
+                if float(val) > 1.5: return 'color: red'
+                elif float(val) > 0: return 'color: green'
             except: pass
             return ''
 
@@ -209,23 +224,23 @@ if st.sidebar.button("🔄 Kurse prüfen"):
         st.divider()
         st.subheader("📰 Nachrichten-Ticker")
         for ticker in news_data:
+            # Schönere Überschrift
             display_name = ticker
-            # Versuche den echten Namen aus der WKN Map zu finden für die Anzeige
             for wkn, t in WKN_MAP.items():
-                if t == ticker:
+                if t == ticker and len(wkn) == 6: # Nur WKNs anzeigen, keine Namen
                     display_name = f"{wkn} ({ticker})"
                     break
-            
+                    
             with st.expander(f"Infos zu {display_name}"):
-                articles = news_data[ticker]
+                articles = news_data.get(ticker, [])
                 if articles:
                     for item in articles:
-                        t = item.get('title') or item.get('headline') or "News"
-                        l = item.get('link') or item.get('url') or f"https://de.finance.yahoo.com/quote/{ticker}"
+                        t = item.get('title') or "News"
+                        l = item.get('link') or f"https://de.finance.yahoo.com/quote/{ticker}"
                         pub = item.get('publisher') or "Yahoo"
                         st.markdown(f"**[{t}]({l})**")
                         st.caption(f"Quelle: {pub}")
                 else:
                     st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
     else:
-        st.warning("Keine Treffer. Falls du eine WKN eingegeben hast, prüfe ob sie in der Liste ist oder nutze das Kürzel.")
+        st.warning("Keine Daten gefunden. Überprüfe deine Eingabe oder das Internet.")
