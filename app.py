@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (Golden Cross & WKN)")
+st.title("💎 Aktien-Radar: Global (Smart Trend & WKN)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -37,7 +37,7 @@ st.sidebar.header("1. Listen laden")
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-# Initialisiere Session State für Ergebnisse, damit sie nicht verschwinden
+# Initialisiere Session State für Ergebnisse
 if 'scan_results' not in st.session_state:
     st.session_state['scan_results'] = None
 if 'scan_news' not in st.session_state:
@@ -61,7 +61,7 @@ ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", val
 st.sidebar.header("3. Filter")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 
-# --- 3. HAUPTPROGRAMM (LOGIK GETRENNT) ---
+# --- 3. HAUPTPROGRAMM ---
 
 # A) SCAN VORGANG
 if st.button("🚀 Scanner starten", type="primary"):
@@ -94,19 +94,38 @@ if st.button("🚀 Scanner starten", type="primary"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # 2. Golden Cross Berechnung (SMA 50 vs SMA 200)
-                sma_50 = df_hist['Close'].rolling(window=50).mean().iloc[-1]
-                sma_200 = df_hist['Close'].rolling(window=200).mean().iloc[-1]
+                # 2. Golden Cross Berechnung (Smart Logic)
+                # Berechne die Gleitenden Durchschnitte für den ganzen Zeitraum
+                sma_50_series = df_hist['Close'].rolling(window=50).mean()
+                sma_200_series = df_hist['Close'].rolling(window=200).mean()
+                
+                # Aktuelle Werte
+                sma_50 = sma_50_series.iloc[-1]
+                sma_200 = sma_200_series.iloc[-1]
                 current_price = df_hist['Close'].iloc[-1]
                 
-                # Signal bestimmen
-                trend_signal = "Neutral"
-                if sma_50 > sma_200:
-                    trend_signal = "✨ GOLDENES KREUZ"
-                elif sma_50 < sma_200:
-                    trend_signal = "💀 Todeskreuz"
+                # Historie der letzten 10 Tage für "Frische"-Check
+                lookback = 10
+                recent_50 = sma_50_series.iloc[-lookback:]
+                recent_200 = sma_200_series.iloc[-lookback:]
                 
-                # Abstand zum SMA 200 (Trendstärke)
+                trend_signal = "Neutral"
+                
+                # Prüfen: Ist aktuell Bullisch (50 > 200)?
+                if sma_50 > sma_200:
+                    # War es in den letzten 10 Tagen mal andersrum? (Crossover)
+                    if (recent_50 < recent_200).any():
+                        trend_signal = "✨ GOLDENES KREUZ (Neu)"
+                    else:
+                        trend_signal = "📈 Aufwärtstrend"
+                # Prüfen: Ist aktuell Bärisch (50 < 200)?
+                elif sma_50 < sma_200:
+                    # War es in den letzten 10 Tagen mal andersrum? (Crossover)
+                    if (recent_50 > recent_200).any():
+                        trend_signal = "💀 Todeskreuz (Neu)"
+                    else:
+                        trend_signal = "📉 Abwärtstrend"
+                
                 dist_200 = ((current_price - sma_200) / sma_200) * 100
                 
                 # Fundamentaldaten
@@ -137,7 +156,7 @@ if st.button("🚀 Scanner starten", type="primary"):
                         "Kürzel": ticker, 
                         "Kurs": f"{round(current_price, 2)} {currency}",
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Trend-Signal": trend_signal,
+                        "Trend": trend_signal, # Smartes Signal
                         "Abst. SMA200": f"{round(dist_200, 1)}%",
                         "Umsatz-Wachst.": growth_display, 
                         "PEG": peg_display,
@@ -156,11 +175,10 @@ if st.button("🚀 Scanner starten", type="primary"):
     status_text.empty()
     progress_bar.empty()
     
-    # Ergebnisse in Session State speichern
     st.session_state['scan_results'] = temp_results
     st.session_state['scan_news'] = temp_news
 
-# B) ANZEIGE (Wird immer ausgeführt, wenn Daten da sind)
+# B) ANZEIGE
 if st.session_state['scan_results']:
     results = st.session_state['scan_results']
     news_data = st.session_state['scan_news']
@@ -170,8 +188,10 @@ if st.session_state['scan_results']:
     
     # Styling
     def style_trend(val):
-        if "GOLDENES" in str(val): return 'color: green; font-weight: bold'
-        if "Todeskreuz" in str(val): return 'color: red'
+        if "GOLDENES" in str(val): return 'color: #006400; font-weight: bold; background-color: #e6ffe6' # Dunkelgrün auf Hellgrün
+        if "Todeskreuz" in str(val): return 'color: red; font-weight: bold'
+        if "Aufwärtstrend" in str(val): return 'color: green'
+        if "Abwärtstrend" in str(val): return 'color: red'
         return ''
         
     def highlight_valuation(val):
@@ -191,13 +211,13 @@ if st.session_state['scan_results']:
         return ''
 
     st.dataframe(df_res.style
-                    .applymap(style_trend, subset=['Trend-Signal'])
+                    .applymap(style_trend, subset=['Trend'])
                     .applymap(highlight_valuation, subset=['Bewertung'])
                     .applymap(style_rsi, subset=['RSI (14)'])
                     .applymap(style_peg, subset=['PEG']), 
                     use_container_width=True)
     
-    # --- CHART-ANALYSE (Jetzt stabil) ---
+    # --- CHART-ANALYSE ---
     st.divider()
     st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
     
@@ -252,4 +272,4 @@ if st.session_state['scan_results']:
             else:
                 st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
 elif st.button("Erneut scannen um Ergebnisse zu laden"):
-    pass # Platzhalter, falls noch keine Ergebnisse da sind
+    pass
