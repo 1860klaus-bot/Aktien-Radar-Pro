@@ -37,6 +37,12 @@ st.sidebar.header("1. Listen laden")
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
+# Initialisiere Session State für Ergebnisse, damit sie nicht verschwinden
+if 'scan_results' not in st.session_state:
+    st.session_state['scan_results'] = None
+if 'scan_news' not in st.session_state:
+    st.session_state['scan_news'] = {}
+
 col1, col2 = st.sidebar.columns(2)
 with col1:
     if st.button("🇩🇪 DAX Liste"): st.session_state['ticker_text'] = DAX_LISTE
@@ -55,9 +61,10 @@ ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", val
 st.sidebar.header("3. Filter")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 
-# --- 3. HAUPTPROGRAMM ---
+# --- 3. HAUPTPROGRAMM (LOGIK GETRENNT) ---
+
+# A) SCAN VORGANG
 if st.button("🚀 Scanner starten", type="primary"):
-    
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
     
@@ -65,8 +72,8 @@ if st.button("🚀 Scanner starten", type="primary"):
         if item in WKN_MAP: tickers.append(WKN_MAP[item])
         else: tickers.append(item)
             
-    results = []
-    news_data = {}
+    temp_results = []
+    temp_news = {}
     status_text = st.empty()
     progress_bar = st.progress(0)
     
@@ -125,13 +132,13 @@ if st.button("🚀 Scanner starten", type="primary"):
                     if peg_ratio is None and info.get('forwardPE', -1) < 0: peg_display = "Verlust"
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
-                    results.append({
+                    temp_results.append({
                         "Name": name, 
                         "Kürzel": ticker, 
                         "Kurs": f"{round(current_price, 2)} {currency}",
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Trend-Signal": trend_signal, # NEU
-                        "Abst. SMA200": f"{round(dist_200, 1)}%", # NEU
+                        "Trend-Signal": trend_signal,
+                        "Abst. SMA200": f"{round(dist_200, 1)}%",
                         "Umsatz-Wachst.": growth_display, 
                         "PEG": peg_display,
                         "Erw. Gewinn (%)": round(upside, 1), 
@@ -139,9 +146,9 @@ if st.button("🚀 Scanner starten", type="primary"):
                     })
                     
                     try:
-                        news_data[ticker] = stock.news[:3] if stock.news else []
+                        temp_news[ticker] = stock.news[:3] if stock.news else []
                     except:
-                        news_data[ticker] = []
+                        temp_news[ticker] = []
         except Exception:
             continue
         progress_bar.progress((i + 1) / total_tickers)
@@ -149,93 +156,100 @@ if st.button("🚀 Scanner starten", type="primary"):
     status_text.empty()
     progress_bar.empty()
     
-    if results:
-        st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
-        df_res = pd.DataFrame(results)
-        
-        # Styling
-        def style_trend(val):
-            if "GOLDENES" in str(val): return 'color: green; font-weight: bold'
-            if "Todeskreuz" in str(val): return 'color: red'
-            return ''
-            
-        def highlight_valuation(val):
-            return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
-        def style_rsi(val):
-            try:
-                if float(val) < 30: return 'color: green; font-weight: bold'
-                elif float(val) > 70: return 'color: red'
-            except: pass
-            return ''
-        def style_peg(val):
-            if val == "Verlust": return 'color: red'
-            try:
-                if float(val) > 1.5: return 'color: red'
-                elif float(val) > 0: return 'color: green'
-            except: pass
-            return ''
+    # Ergebnisse in Session State speichern
+    st.session_state['scan_results'] = temp_results
+    st.session_state['scan_news'] = temp_news
 
-        st.dataframe(df_res.style
-                     .applymap(style_trend, subset=['Trend-Signal'])
-                     .applymap(highlight_valuation, subset=['Bewertung'])
-                     .applymap(style_rsi, subset=['RSI (14)'])
-                     .applymap(style_peg, subset=['PEG']), 
-                     use_container_width=True)
+# B) ANZEIGE (Wird immer ausgeführt, wenn Daten da sind)
+if st.session_state['scan_results']:
+    results = st.session_state['scan_results']
+    news_data = st.session_state['scan_news']
+    
+    st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
+    df_res = pd.DataFrame(results)
+    
+    # Styling
+    def style_trend(val):
+        if "GOLDENES" in str(val): return 'color: green; font-weight: bold'
+        if "Todeskreuz" in str(val): return 'color: red'
+        return ''
         
-        # --- CHART-ANALYSE ---
-        st.divider()
-        st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
+    def highlight_valuation(val):
+        return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
+    def style_rsi(val):
+        try:
+            if float(val) < 30: return 'color: green; font-weight: bold'
+            elif float(val) > 70: return 'color: red'
+        except: pass
+        return ''
+    def style_peg(val):
+        if val == "Verlust": return 'color: red'
+        try:
+            if float(val) > 1.5: return 'color: red'
+            elif float(val) > 0: return 'color: green'
+        except: pass
+        return ''
+
+    st.dataframe(df_res.style
+                    .applymap(style_trend, subset=['Trend-Signal'])
+                    .applymap(highlight_valuation, subset=['Bewertung'])
+                    .applymap(style_rsi, subset=['RSI (14)'])
+                    .applymap(style_peg, subset=['PEG']), 
+                    use_container_width=True)
+    
+    # --- CHART-ANALYSE (Jetzt stabil) ---
+    st.divider()
+    st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
+    
+    selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
+                                    [r['Kürzel'] for r in results])
+    
+    if selected_ticker:
+        st.write(f"### Analyse: {selected_ticker}")
+        chart_stock = yf.Ticker(selected_ticker)
+        chart_df = chart_stock.history(period="2y")
         
-        if results:
-            selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
-                                           [r['Kürzel'] for r in results])
+        if not chart_df.empty:
+            chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
+            chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
+            chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
+            chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
+            chart_df['Trend (SMA 200)'] = chart_df['Close'].rolling(window=200).mean()
+            chart_df['Trend (SMA 50)'] = chart_df['Close'].rolling(window=50).mean()
             
-            if selected_ticker:
-                st.write(f"### Analyse: {selected_ticker}")
-                chart_stock = yf.Ticker(selected_ticker)
-                chart_df = chart_stock.history(period="2y")
+            plot_df = chart_df.iloc[-250:].copy()
+            st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
+            st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig). Ein Kreuzen der Linien ist oft ein wichtiges Signal.")
+
+            delta = chart_df['Close'].diff()
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
+            avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+            avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+            chart_df['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+            
+            rsi_plot = chart_df.iloc[-250:].copy()
+            rsi_plot['Overbought'] = 70
+            rsi_plot['Oversold'] = 30
+            st.line_chart(rsi_plot[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
+
+    st.divider()
+    st.subheader("📰 Nachrichten-Ticker")
+    for ticker in news_data:
+        display_name = ticker
+        for wkn, t in WKN_MAP.items():
+            if t == ticker and len(wkn) == 6: display_name = f"{wkn} ({ticker})"
                 
-                if not chart_df.empty:
-                    chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
-                    chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
-                    chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
-                    chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
-                    chart_df['Trend (SMA 200)'] = chart_df['Close'].rolling(window=200).mean()
-                    chart_df['Trend (SMA 50)'] = chart_df['Close'].rolling(window=50).mean()
-                    
-                    plot_df = chart_df.iloc[-250:].copy()
-                    st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
-                    st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig). Ein Kreuzen der Linien ist oft ein wichtiges Signal.")
-
-                    delta = chart_df['Close'].diff()
-                    gain = delta.where(delta > 0, 0)
-                    loss = -delta.where(delta < 0, 0)
-                    avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
-                    avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
-                    chart_df['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
-                    
-                    rsi_plot = chart_df.iloc[-250:].copy()
-                    rsi_plot['Overbought'] = 70
-                    rsi_plot['Oversold'] = 30
-                    st.line_chart(rsi_plot[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
-
-        st.divider()
-        st.subheader("📰 Nachrichten-Ticker")
-        for ticker in news_data:
-            display_name = ticker
-            for wkn, t in WKN_MAP.items():
-                if t == ticker and len(wkn) == 6: display_name = f"{wkn} ({ticker})"
-                    
-            with st.expander(f"Infos zu {display_name}"):
-                articles = news_data.get(ticker, [])
-                if articles:
-                    for item in articles:
-                        t = item.get('title') or "News"
-                        l = item.get('link') or f"https://de.finance.yahoo.com/quote/{ticker}"
-                        pub = item.get('publisher') or "Yahoo"
-                        st.markdown(f"**[{t}]({l})**")
-                        st.caption(f"Quelle: {pub}")
-                else:
-                    st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
-    else:
-        st.warning("Keine Treffer. Falls du eine WKN eingegeben hast, prüfe ob sie in der Liste ist oder nutze das Kürzel.")
+        with st.expander(f"Infos zu {display_name}"):
+            articles = news_data.get(ticker, [])
+            if articles:
+                for item in articles:
+                    t = item.get('title') or "News"
+                    l = item.get('link') or f"https://de.finance.yahoo.com/quote/{ticker}"
+                    pub = item.get('publisher') or "Yahoo"
+                    st.markdown(f"**[{t}]({l})**")
+                    st.caption(f"Quelle: {pub}")
+            else:
+                st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
+elif st.button("Erneut scannen um Ergebnisse zu laden"):
+    pass # Platzhalter, falls noch keine Ergebnisse da sind
