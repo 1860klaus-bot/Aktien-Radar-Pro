@@ -10,6 +10,8 @@ st.title("💎 Aktien-Radar: Global (WKN & Ticker)")
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
 US_TECH_LISTE = "865985, 870747, 906866, A1CX3T, 918422, A14Y6F, A1JWVX, 552484, A14R7U, A1J5X3, A2QP7J, 851399"
 GLOBAL_TOP_LISTE = "865985, 870747, 918422, 716460, 723610, 840400, 850663, 856958, A0M240, 850517"
+# Deine Favoriten (Beliebte Trader-Aktien Mix)
+FAVORITEN_LISTE = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE, LHA.DE, 865985"
 
 # Übersetzer: WKN/Name -> Ticker
 WKN_MAP = {
@@ -38,6 +40,9 @@ WKN_MAP = {
     "SHL100": "SHL.DE", "SIEMENS HEALTH": "SHL.DE",
     "A1ML7J": "VNA.DE", "VONOVIA": "VNA.DE",
     "938914": "AIR.DE", "AIRBUS": "AIR.DE",
+    "703000": "RHM.DE", "RHEINMETALL": "RHM.DE",
+    "TUAG50": "TUI1.DE", "TUI": "TUI1.DE",
+    "823212": "LHA.DE", "LUFTHANSA": "LHA.DE",
     # US & International
     "865985": "AAPL", "APPLE": "AAPL",
     "870747": "MSFT", "MICROSOFT": "MSFT",
@@ -50,6 +55,9 @@ WKN_MAP = {
     "A14R7U": "PYPL", "PAYPAL": "PYPL",
     "A1J5X3": "ANGI", "ANGI": "ANGI",
     "A2QP7J": "GME", "GAMESTOP": "GME",
+    "A0F5UF": "PLTR", "PALANTIR": "PLTR",
+    "A2QP7J": "COIN", "COINBASE": "COIN",
+    "863186": "AMD",  "AMD": "AMD",
     "850663": "KO", "COCA COLA": "KO",
     "856958": "MCD", "MCDONALDS": "MCD",
     "A0M240": "V", "VISA": "V",
@@ -61,11 +69,11 @@ WKN_MAP = {
 
 # --- 2. SEITENLEISTE MIT LOGIK ---
 st.sidebar.header("1. Listen laden")
-# Session State initialisieren, damit das Textfeld aktualisiert werden kann
+# Session State initialisieren
 if 'ticker_text' not in st.session_state:
-    st.session_state['ticker_text'] = "716460, 865985, NVDA, ANGI"
+    st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-# Buttons zum Laden der Listen
+# Buttons zum Laden der Listen (jetzt 4 Stück in 2 Reihen)
 col1, col2 = st.sidebar.columns(2)
 with col1:
     if st.button("🇩🇪 DAX Liste"):
@@ -74,8 +82,13 @@ with col2:
     if st.button("🇺🇸 US Tech"):
         st.session_state['ticker_text'] = US_TECH_LISTE
 
-if st.sidebar.button("🌍 Global Top 10"):
-    st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
+col3, col4 = st.sidebar.columns(2)
+with col3:
+    if st.button("🌍 Global Top"):
+        st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
+with col4:
+    if st.button("⭐ Favoriten"):
+        st.session_state['ticker_text'] = FAVORITEN_LISTE
 
 st.sidebar.header("2. Manuelle Eingabe")
 ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", 
@@ -147,7 +160,7 @@ if st.button("🚀 Scanner starten", type="primary"):
                 except:
                     last_q_profit = None
 
-                # Bewertung
+                # Bewertung-Status
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
                 if upside < 0: status = "Überbewertet"
 
@@ -224,10 +237,9 @@ if st.button("🚀 Scanner starten", type="primary"):
         st.divider()
         st.subheader("📰 Nachrichten-Ticker")
         for ticker in news_data:
-            # Schönere Überschrift
             display_name = ticker
             for wkn, t in WKN_MAP.items():
-                if t == ticker and len(wkn) == 6: # Nur WKNs anzeigen, keine Namen
+                if t == ticker and len(wkn) == 6: 
                     display_name = f"{wkn} ({ticker})"
                     break
                     
@@ -243,4 +255,4 @@ if st.button("🚀 Scanner starten", type="primary"):
                 else:
                     st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
     else:
-        st.warning("Keine Daten gefunden. Überprüfe deine Eingabe oder das Internet.")
+        st.warning("Keine Treffer. Falls du eine WKN eingegeben hast, prüfe ob sie in der Liste ist oder nutze das Kürzel.")
