@@ -46,9 +46,13 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
                 
-                # Umsatz & Wachstum (Zukunft)
-                rev_growth = info.get('revenueGrowth', 0) # Aktuelles Wachstum (YOY)
-                peg_ratio = info.get('pegRatio', None)    # Bewertung relativ zum zukünftigen Wachstum
+                # Umsatz & Wachstum
+                rev_growth = info.get('revenueGrowth', 0) 
+                
+                # PEG Ratio: Versuche Forward PEG, sonst Trailing PEG
+                peg_ratio = info.get('pegRatio')
+                if peg_ratio is None:
+                    peg_ratio = info.get('trailingPegRatio')
                 
                 # Gewinn (letztes Quartal)
                 try:
@@ -62,7 +66,17 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
 
                 # Daten aufbereiten
                 if rsi_val <= rsi_limit:
-                    peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
+                    # Formatierung PEG
+                    if peg_ratio is not None:
+                        peg_display = round(peg_ratio, 2)
+                    else:
+                        # Wenn immer noch kein PEG da ist, prüfen wir warum
+                        fwd_pe = info.get('forwardPE')
+                        if fwd_pe is None or fwd_pe < 0:
+                            peg_display = "Verlust (Kein PEG)"
+                        else:
+                            peg_display = "N/A"
+
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
                     results.append({
@@ -70,8 +84,8 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
                         "Kurs ($)": round(current_price, 2),
                         "Trend": f"{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Umsatz-Wachstum": growth_display,  # NEU
-                        "PEG Ratio (Zukunft)": peg_display, # NEU
+                        "Umsatz-Wachstum": growth_display, 
+                        "PEG Ratio": peg_display,
                         "Erw. Gewinn (%)": round(upside, 1), 
                         "Bewertung": status,
                         "Q-Gewinn (Mio $)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
