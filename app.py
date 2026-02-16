@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (WKN & Ticker)")
+st.title("💎 Aktien-Radar: Global (Golden Cross & WKN)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -78,8 +78,8 @@ if st.button("🚀 Scanner starten", type="primary"):
             stock = yf.Ticker(ticker)
             df_hist = stock.history(period="300d")
             
-            if not df_hist.empty and len(df_hist) > 14:
-                # RSI Berechnung
+            if not df_hist.empty and len(df_hist) > 200:
+                # 1. RSI Berechnung
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -87,16 +87,26 @@ if st.button("🚀 Scanner starten", type="primary"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
+                # 2. Golden Cross Berechnung (SMA 50 vs SMA 200)
+                sma_50 = df_hist['Close'].rolling(window=50).mean().iloc[-1]
+                sma_200 = df_hist['Close'].rolling(window=200).mean().iloc[-1]
+                current_price = df_hist['Close'].iloc[-1]
+                
+                # Signal bestimmen
+                trend_signal = "Neutral"
+                if sma_50 > sma_200:
+                    trend_signal = "✨ GOLDENES KREUZ"
+                elif sma_50 < sma_200:
+                    trend_signal = "💀 Todeskreuz"
+                
+                # Abstand zum SMA 200 (Trendstärke)
+                dist_200 = ((current_price - sma_200) / sma_200) * 100
+                
+                # Fundamentaldaten
                 info = stock.info
                 name = info.get('shortName') or info.get('longName') or ticker
                 currency = info.get('currency', '?')
                 
-                # Preise & Trends
-                current_price = info.get('currentPrice') or info.get('regularMarketPrice') or df_hist['Close'].iloc[-1]
-                previous_close = info.get('previousClose') or df_hist['Close'].iloc[-2]
-                change_pct = ((current_price - previous_close) / previous_close) * 100 if current_price and previous_close else 0
-                
-                # Fundamentaldaten
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
                 rev_growth = info.get('revenueGrowth', 0) 
@@ -116,10 +126,16 @@ if st.button("🚀 Scanner starten", type="primary"):
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
                     results.append({
-                        "Name": name, "Kürzel": ticker, "Kurs": f"{round(current_price, 2)} {currency}",
-                        "Trend": f"{round(change_pct, 2)}%", "RSI (14)": round(float(rsi_val), 1),
-                        "Umsatz-Wachst.": growth_display, "PEG": peg_display,
-                        "Erw. Gewinn (%)": round(upside, 1), "Bewertung": status
+                        "Name": name, 
+                        "Kürzel": ticker, 
+                        "Kurs": f"{round(current_price, 2)} {currency}",
+                        "RSI (14)": round(float(rsi_val), 1),
+                        "Trend-Signal": trend_signal, # NEU
+                        "Abst. SMA200": f"{round(dist_200, 1)}%", # NEU
+                        "Umsatz-Wachst.": growth_display, 
+                        "PEG": peg_display,
+                        "Erw. Gewinn (%)": round(upside, 1), 
+                        "Bewertung": status
                     })
                     
                     try:
@@ -138,10 +154,11 @@ if st.button("🚀 Scanner starten", type="primary"):
         df_res = pd.DataFrame(results)
         
         # Styling
-        def style_change(val):
-            if "%" in str(val):
-                return 'color: green' if float(val.strip('%')) > 0 else 'color: red'
+        def style_trend(val):
+            if "GOLDENES" in str(val): return 'color: green; font-weight: bold'
+            if "Todeskreuz" in str(val): return 'color: red'
             return ''
+            
         def highlight_valuation(val):
             return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
         def style_rsi(val):
@@ -158,12 +175,14 @@ if st.button("🚀 Scanner starten", type="primary"):
             except: pass
             return ''
 
-        st.dataframe(df_res.style.applymap(style_change, subset=['Trend'])
+        st.dataframe(df_res.style
+                     .applymap(style_trend, subset=['Trend-Signal'])
                      .applymap(highlight_valuation, subset=['Bewertung'])
                      .applymap(style_rsi, subset=['RSI (14)'])
-                     .applymap(style_peg, subset=['PEG']), use_container_width=True)
+                     .applymap(style_peg, subset=['PEG']), 
+                     use_container_width=True)
         
-        # --- CHART-ANALYSE MIT BOLLINGER, TREND & SMA 50 ---
+        # --- CHART-ANALYSE ---
         st.divider()
         st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
         
@@ -177,24 +196,17 @@ if st.button("🚀 Scanner starten", type="primary"):
                 chart_df = chart_stock.history(period="2y")
                 
                 if not chart_df.empty:
-                    # 1. Bollinger Bänder
                     chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
                     chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
                     chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
                     chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
-                    
-                    # 2. Trends: SMA 200 & SMA 50
                     chart_df['Trend (SMA 200)'] = chart_df['Close'].rolling(window=200).mean()
                     chart_df['Trend (SMA 50)'] = chart_df['Close'].rolling(window=50).mean()
                     
-                    # Daten anzeigen (letzte 250 Tage)
                     plot_df = chart_df.iloc[-250:].copy()
-                    
-                    # Chart 1: Preis, Bänder, SMA 200, SMA 50
                     st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
                     st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig). Ein Kreuzen der Linien ist oft ein wichtiges Signal.")
 
-                    # Chart 2: RSI
                     delta = chart_df['Close'].diff()
                     gain = delta.where(delta > 0, 0)
                     loss = -delta.where(delta < 0, 0)
@@ -205,7 +217,6 @@ if st.button("🚀 Scanner starten", type="primary"):
                     rsi_plot = chart_df.iloc[-250:].copy()
                     rsi_plot['Overbought'] = 70
                     rsi_plot['Oversold'] = 30
-                    
                     st.line_chart(rsi_plot[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
 
         st.divider()
@@ -213,9 +224,8 @@ if st.button("🚀 Scanner starten", type="primary"):
         for ticker in news_data:
             display_name = ticker
             for wkn, t in WKN_MAP.items():
-                if t == ticker and len(wkn) == 6: 
-                    display_name = f"{wkn} ({ticker})"
-                    break
+                if t == ticker and len(wkn) == 6: display_name = f"{wkn} ({ticker})"
+                    
             with st.expander(f"Infos zu {display_name}"):
                 articles = news_data.get(ticker, [])
                 if articles:
