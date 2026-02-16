@@ -3,26 +3,62 @@ import yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (DE & US)")
+st.title("💎 Aktien-Radar: Global (WKN & Ticker)")
 
-# Seitenleiste mit Tipps für deutsche Aktien
+# --- WKN DATENBANK (Erweiterbar) ---
+WKN_MAP = {
+    # DAX 40 (Auszug)
+    "716460": "SAP.DE",   "SAP": "SAP.DE",
+    "723610": "SIE.DE",   "SIEMENS": "SIE.DE",
+    "840400": "ALV.DE",   "ALLIANZ": "ALV.DE",
+    "710000": "MBG.DE",   "MERCEDES": "MBG.DE",
+    "766403": "VOW3.DE",  "VW": "VOW3.DE",
+    "555750": "DTE.DE",   "TELEKOM": "DTE.DE",
+    "BASF11": "BAS.DE",   "BASF": "BAS.DE",
+    "BAY001": "BAYN.DE",  "BAYER": "BAYN.DE",
+    "519000": "BMW.DE",   "BMW": "BMW.DE",
+    "514000": "DBK.DE",   "DEUTSCHE BANK": "DBK.DE",
+    "623100": "IFX.DE",   "INFINEON": "IFX.DE",
+    "ENAG99": "EOAN.DE",  "EON": "EOAN.DE",
+    # US Tech (WKN -> US Ticker für beste Daten)
+    "865985": "AAPL",     "APPLE": "AAPL",
+    "870747": "MSFT",     "MICROSOFT": "MSFT",
+    "906866": "AMZN",     "AMAZON": "AMZN",
+    "A1CX3T": "TSLA",     "TESLA": "TSLA",
+    "918422": "NVDA",     "NVIDIA": "NVDA",
+    "A14Y6F": "GOOGL",    "ALPHABET": "GOOGL",
+    "A1J5X3": "ANGI",     "ANGI": "ANGI",
+    "A2QP7J": "GME",      "GAMESTOP": "GME"
+}
+
+# Seitenleiste
 st.sidebar.header("Filter-Einstellungen")
-st.sidebar.info("🇩🇪 **Tipp für deutsche Aktien:**\nNutze die Endung **.DE** für Xetra.\nBeispiele: `SAP.DE`, `SIE.DE`, `ALV.DE`, `VOW3.DE`")
+st.sidebar.info("💡 **Neu: WKN Suche!**\nDu kannst jetzt auch WKNs eingeben (z.B. `716460` für SAP oder `865985` für Apple).")
 
-# Gemischte Standard-Liste (Deutschland & USA)
-default_tickers = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, NVDA, TSLA, ANGI"
-ticker_input = st.sidebar.text_area("Aktien-Liste (Kürzel mit Komma)", default_tickers)
+# Standard-Liste
+default_inputs = "716460, 865985, NVDA, A1CX3T, ANGI"
+ticker_input = st.sidebar.text_area("Aktien-Liste (WKN oder Kürzel)", default_inputs)
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 
 # Button zum Aktualisieren
-if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
-    tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
+if st.sidebar.button("🔄 Kurse prüfen"):
+    # Eingabe verarbeiten und WKNs übersetzen
+    raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
+    tickers = []
+    
+    # Übersetzungsschleife
+    for item in raw_inputs:
+        if item in WKN_MAP:
+            tickers.append(WKN_MAP[item])
+        else:
+            tickers.append(item) # Wenn nicht in WKN Liste, versuchen wir es als Ticker
+            
     results = []
     news_data = {}
     status_text = st.empty()
     
     for ticker in tickers:
-        status_text.text(f"Lade Daten (Global): {ticker}...")
+        status_text.text(f"Lade Daten: {ticker}...")
         try:
             stock = yf.Ticker(ticker)
             
@@ -40,14 +76,15 @@ if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
                 
                 # 2. Fundamentaldaten & Währung
                 info = stock.info
-                currency = info.get('currency', '???') # Währung (EUR/USD)
+                currency = info.get('currency', '???')
+                name = info.get('shortName', ticker)
                 
                 # Preise
                 current_price = info.get('currentPrice') or info.get('regularMarketPrice') or df_hist['Close'].iloc[-1]
                 previous_close = info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((current_price - previous_close) / previous_close) * 100 if current_price and previous_close else 0
                 
-                # Kursziele (Achtung: Bei deutschen Aktien manchmal weniger Daten)
+                # Kursziele
                 target = info.get('targetMeanPrice', 0)
                 upside = 0
                 if target and current_price:
@@ -82,16 +119,16 @@ if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
                     results.append({
-                        "Ticker": ticker, 
+                        "Name": name, # Neuer Name für bessere Übersicht
+                        "Kürzel": ticker,
                         "Kurs": round(current_price, 2),
-                        "Währung": currency, # Wichtig für DE-Aktien
+                        "Währung": currency,
                         "Trend": f"{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
                         "Umsatz-Wachst.": growth_display, 
                         "PEG": peg_display,
                         "Erw. Gewinn (%)": round(upside, 1), 
-                        "Bewertung": status,
-                        "Q-Gewinn (Mio)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
+                        "Bewertung": status
                     })
                     
                     # News-Abruf
@@ -131,6 +168,7 @@ if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
 
         def style_peg(val):
             try:
+                if val == "Verlust": return 'color: red'
                 num = float(val)
                 if num > 1: return 'color: red'
                 elif num > 0: return 'color: green'
@@ -147,7 +185,14 @@ if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
         st.divider()
         st.subheader("📰 Nachrichten-Ticker")
         for ticker in news_data:
-            with st.expander(f"Infos zu {ticker}"):
+            display_name = ticker
+            # Versuche den echten Namen aus der WKN Map zu finden für die Anzeige
+            for wkn, t in WKN_MAP.items():
+                if t == ticker:
+                    display_name = f"{wkn} ({ticker})"
+                    break
+            
+            with st.expander(f"Infos zu {display_name}"):
                 articles = news_data[ticker]
                 if articles:
                     for item in articles:
@@ -157,7 +202,6 @@ if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
                         st.markdown(f"**[{t}]({l})**")
                         st.caption(f"Quelle: {pub}")
                 else:
-                    # Link zur deutschen Yahoo Seite
-                    st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen DE](https://de.finance.yahoo.com/quote/{ticker})")
+                    st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
     else:
-        st.warning("Keine Treffer unter dem Limit.")
+        st.warning("Keine Treffer. Falls du eine WKN eingegeben hast, prüfe ob sie in der Liste ist oder nutze das Kürzel.")
