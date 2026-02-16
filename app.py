@@ -2,31 +2,35 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="Aktien-Radar Realtime", page_icon="💎", layout="wide")
-st.title("💎 Aktien-Radar: Realtime & Analyse")
+st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
+st.title("💎 Aktien-Radar: Global (DE & US)")
 
-# Seitenleiste
+# Seitenleiste mit Tipps für deutsche Aktien
 st.sidebar.header("Filter-Einstellungen")
-ticker_input = st.sidebar.text_area("Aktien-Liste (Kürzel mit Komma)", "NVDA,TSLA,AMD,AAPL,ANGI,MSFT,AMZN,GOOGL,IAC")
+st.sidebar.info("🇩🇪 **Tipp für deutsche Aktien:**\nNutze die Endung **.DE** für Xetra.\nBeispiele: `SAP.DE`, `SIE.DE`, `ALV.DE`, `VOW3.DE`")
+
+# Gemischte Standard-Liste (Deutschland & USA)
+default_tickers = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, NVDA, TSLA, ANGI"
+ticker_input = st.sidebar.text_area("Aktien-Liste (Kürzel mit Komma)", default_tickers)
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 
 # Button zum Aktualisieren
-if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
+if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
     tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     results = []
     news_data = {}
     status_text = st.empty()
     
     for ticker in tickers:
-        status_text.text(f"Live-Abfrage: {ticker}...")
+        status_text.text(f"Lade Daten (Global): {ticker}...")
         try:
             stock = yf.Ticker(ticker)
             
-            # 1. Historie für RSI laden
+            # 1. Historie laden
             df_hist = stock.history(period="300d")
             
             if not df_hist.empty and len(df_hist) > 14:
-                # RSI Berechnung (Wilder's Smoothing)
+                # RSI Berechnung
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -34,22 +38,25 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # 2. LIVE-Daten & Fundamentales
+                # 2. Fundamentaldaten & Währung
                 info = stock.info
+                currency = info.get('currency', '???') # Währung (EUR/USD)
                 
                 # Preise
                 current_price = info.get('currentPrice') or info.get('regularMarketPrice') or df_hist['Close'].iloc[-1]
                 previous_close = info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((current_price - previous_close) / previous_close) * 100 if current_price and previous_close else 0
                 
-                # Kursziele & Potenzial
+                # Kursziele (Achtung: Bei deutschen Aktien manchmal weniger Daten)
                 target = info.get('targetMeanPrice', 0)
-                upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
+                upside = 0
+                if target and current_price:
+                    upside = ((target - current_price) / current_price) * 100
                 
                 # Umsatz & Wachstum
                 rev_growth = info.get('revenueGrowth', 0) 
                 
-                # PEG Ratio: Versuche Forward PEG, sonst Trailing PEG
+                # PEG Ratio
                 peg_ratio = info.get('pegRatio')
                 if peg_ratio is None:
                     peg_ratio = info.get('trailingPegRatio')
@@ -64,30 +71,27 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
                 if upside < 0: status = "Überbewertet"
 
-                # Daten aufbereiten
+                # Filter anwenden
                 if rsi_val <= rsi_limit:
-                    # Formatierung PEG
-                    if peg_ratio is not None:
-                        peg_display = round(peg_ratio, 2)
-                    else:
-                        fwd_pe = info.get('forwardPE')
-                        if fwd_pe is None or fwd_pe < 0:
-                            peg_display = "Verlust (Kein PEG)"
-                        else:
-                            peg_display = "N/A"
+                    # Formatierung
+                    peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
+                    if peg_ratio is None:
+                         fwd_pe = info.get('forwardPE')
+                         if fwd_pe is None or fwd_pe < 0: peg_display = "Verlust"
 
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
                     results.append({
                         "Ticker": ticker, 
-                        "Kurs ($)": round(current_price, 2),
+                        "Kurs": round(current_price, 2),
+                        "Währung": currency, # Wichtig für DE-Aktien
                         "Trend": f"{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Umsatz-Wachstum": growth_display, 
-                        "PEG Ratio": peg_display,
+                        "Umsatz-Wachst.": growth_display, 
+                        "PEG": peg_display,
                         "Erw. Gewinn (%)": round(upside, 1), 
                         "Bewertung": status,
-                        "Q-Gewinn (Mio $)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
+                        "Q-Gewinn (Mio)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
                     })
                     
                     # News-Abruf
@@ -104,63 +108,56 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
             
     status_text.empty()
     
-    if results:
-        st.subheader("📊 Live-Marktübersicht")
-        df_res = pd.DataFrame(results)
+    wenn Ergebnisse:
+ st.Unterüberschrift(„🌍 Globaler Marktüberblick“)
+ df_res = pd.DataFrame(Erbnisse)
         
-        # Styling Funktionen
-        def style_change(val):
-            if isinstance(val, str) and "%" in val:
-                num = float(val.strip('%'))
-                return 'color: green' if num > 0 else 'color: red'
-            return ''
+        # Styling
+        def Stil_Änderung(val):
+ wenn isinstance(val, str) und "%" in Wert:
+ num = Schweben(Wert.Streifen('%'))
+ Zurückgeben 'Farbe: grün' wenn Nummer > 0 sonst 'Farbe: rot'
+ Zurückgeben ''
             
-        def highlight_valuation(val):
-            return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
+ def highlight_bewährung(val):
+ Rückgeben 'Hintergrundfarbe: #90EE90; Farbe: schwarz' wenn val == "Unterbewortet" sonst ''
 
-        def style_rsi(val):
-            try:
-                if float(val) < 30:
-                    return 'color: green; font-weight: bold'
-                elif float(val) > 70:
-                    return 'color: red'
-            except:
-                pass
-            return ''
+ def Stil_rsi(val):
+ versuchen:
+ wenn schweben(val) < 30: zurückgeben „Farbe: grün; Schriftstücke: fett“
+ Elif schweben(val) > 70: zurückgeben 'Farbe: rot'
+ außer: passieren
+ Zurückgeben ''
 
-        def style_peg(val):
-            try:
-                # Versuche den Wert in eine Zahl umzuwandeln
-                num = float(val)
-                if num > 1:
-                    return 'color: red'
-                elif num > 0: # Grün für Werte zwischen 0 und 1
-                    return 'color: green'
-            except:
-                pass
-            return ''
+ def Stil_peg(val):
+ versuchen:
+ num = schweben(val)
+ wenn Nummer > 1: kurzgeben 'Farbe: rot'
+ Elif Nummer > 0: zurückgeben 'Farbe: grün'
+ außer: passieren
+ Zurückgeben ''
 
-        # Styling anwenden
-        st.dataframe(df_res.style
-                     .applymap(style_change, subset=['Trend'])
-                     .applymap(highlight_valuation, subset=['Bewertung'])
-                     .applymap(style_rsi, subset=['RSI (14)'])
-                     .applymap(style_peg, subset=['PEG Ratio']), 
-                     use_container_width=True)
+ st.Datenrahmen(df_res.Stil
+ .Applikemap (style_change, Teilmenge=['Trend'])
+ .Applikemap (highlight_valuation, Teilmenge=['Bewährung'])
+ .Applikemap (style_rsi, Teilmenge=['RSI (14)'])
+ .Applikemap (style_peg, Teilmenge=['PEG']), 
+ use_container_width=Wahr)
         
-        st.divider()
-        st.subheader("📰 Aktuelle Nachrichten")
-        for ticker in news_data:
-            with st.expander(f"Nachrichten für {ticker}"):
-                articles = news_data[ticker]
-                if articles:
-                    for item in articles:
-                        t = item.get('title') or item.get('headline') or "News"
-                        l = item.get('link') or item.get('url') or f"https://finance.yahoo.com/quote/{ticker}"
-                        pub = item.get('publisher') or "Yahoo"
-                        st.markdown(f"**[{t}]({l})**")
-                        st.caption(f"Quelle: {pub}")
-                else:
-                    st.info(f"Keine News. [Zu Yahoo Finance](https://finance.yahoo.com/quote/{ticker})")
-    else:
-        st.warning("Keine Treffer unter dem Limit.")
+ st.Teiler ()
+ st.Unterüberschrift("📰 Nachrichten-Ticker")
+ für Ticker in news_data:
+ mit st.Expander(f"Infos zu {Ticker}"):
+ Artikel = Nachrichten_Daten[Ticker]
+ wenn Artikel:
+ für Artikel in Artikel:
+ t = Artikel.bekommen('Titel') oder Artikel.bekommen('Überschrift') oder "Neuigkeiten"
+ l = Artikel.bekommen('Link') oder Artikel.bekommen('URL') oder f"https://de.finance.yahoo.com/quote/{Ticker}"
+ Kneipe = Artikel.bekommen('Verlag') oder "Yahoo"
+ st.Markdown(f"**[{t}]({l})**")
+ st.Untertitel(f"Quelle: {Kneipe}")
+ sonst:
+ # Link zur deutschen Yahoo Seite
+ st.Info(f"Keine direkten Nachrichten. [Hier klicken für Yahoo Finanzen DE](https://de.finance.yahoo.com/quote/{Ticker})")
+ sonst:
+ st.Warnung(„Keine Treffer unter dem Limit“)
