@@ -20,8 +20,9 @@ if st.sidebar.button("🚀 Voll-Analyse starten"):
         try:
             stock = yf.Ticker(ticker)
             df_hist = stock.history(period="300d")
+            
             if not df_hist.empty and len(df_hist) > 14:
-                # RSI Berechnung
+                # RSI Wilder's Smoothing
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -50,9 +51,17 @@ if st.sidebar.button("🚀 Voll-Analyse starten"):
                         "Letzter Q-Gewinn (Mio $)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
                         "KGV (fwd)": round(info.get('forwardPE', 0), 1) if info.get('forwardPE', 0) else "N/A"
                     })
-                    # News-Abruf
-                    news_data[ticker] = stock.news[:5] # Wir laden 5 News für mehr Treffer
-        except:
+                    
+                    # VERBESSERTER NEWS-ABRUF
+                    try:
+                        ticker_news = stock.news
+                        if ticker_news and len(ticker_news) > 0:
+                            news_data[ticker] = ticker_news[:3]
+                        else:
+                            news_data[ticker] = []
+                    except:
+                        news_data[ticker] = []
+        except Exception as e:
             continue
             
     status_text.empty()
@@ -63,19 +72,17 @@ if st.sidebar.button("🚀 Voll-Analyse starten"):
         
         st.divider()
         st.subheader("📰 Aktuelle Nachrichten")
-        for ticker, items in news_data.items():
+        for ticker in news_data:
             with st.expander(f"Nachrichten für {ticker}"):
-                if items:
-                    for item in items:
-                        # Wir versuchen verschiedene Felder, falls Yahoo das Format ändert
-                        title = item.get('title') or item.get('summary') or "Kein Titel"
-                        link = item.get('link') or item.get('url') or "#"
-                        publisher = item.get('publisher') or item.get('source') or "Quelle unbekannt"
-                        
-                        if title != "Kein Titel":
-                            st.markdown(f"**[{title}]({link})**")
-                            st.caption(f"Quelle: {publisher}")
+                articles = news_data[ticker]
+                if articles:
+                    for item in articles:
+                        # Suche nach verschiedenen Feldnamen für Titel und Link
+                        t = item.get('title') or item.get('headline') or "Nachricht ohne Titel"
+                        l = item.get('link') or item.get('url') or f"https://finance.yahoo.com/quote/{ticker}"
+                        st.markdown(f"**[{t}]({l})**")
+                        st.caption(f"Quelle: {item.get('publisher', 'Yahoo Finance')}")
                 else:
-                    st.write("Momentan keine aktuellen Nachrichten für diesen Ticker gefunden.")
+                    st.info(f"Keine direkten News für {ticker} gefunden. [Hier klicken für Yahoo News](https://finance.yahoo.com/quote/{ticker}/news)")
     else:
         st.warning("Keine Treffer unter dem Limit.")
