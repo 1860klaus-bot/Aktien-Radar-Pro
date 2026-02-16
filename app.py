@@ -5,39 +5,63 @@ import pandas as pd
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
 st.title("💎 Aktien-Radar: Global (WKN & Ticker)")
 
-# --- WKN DATENBANK (Erweiterbar) ---
+# --- WKN DATENBANK (Erweitert: DAX 40 & US Top-Werte) ---
 WKN_MAP = {
-    # DAX 40 (Auszug)
-    "716460": "SAP.DE",   "SAP": "SAP.DE",
-    "723610": "SIE.DE",   "SIEMENS": "SIE.DE",
+    # --- DEUTSCHLAND (DAX 40 Auszug) ---
+    "A1EWWW": "ADS.DE",   "ADIDAS": "ADS.DE",
     "840400": "ALV.DE",   "ALLIANZ": "ALV.DE",
-    "710000": "MBG.DE",   "MERCEDES": "MBG.DE",
-    "766403": "VOW3.DE",  "VW": "VOW3.DE",
-    "555750": "DTE.DE",   "TELEKOM": "DTE.DE",
     "BASF11": "BAS.DE",   "BASF": "BAS.DE",
     "BAY001": "BAYN.DE",  "BAYER": "BAYN.DE",
+    "520000": "BEI.DE",   "BEIERSDORF": "BEI.DE",
     "519000": "BMW.DE",   "BMW": "BMW.DE",
+    "543900": "CON.DE",   "CONTINENTAL": "CON.DE",
+    "CBK100": "CBK.DE",   "COMMERZBANK": "CBK.DE",
     "514000": "DBK.DE",   "DEUTSCHE BANK": "DBK.DE",
-    "623100": "IFX.DE",   "INFINEON": "IFX.DE",
+    "581005": "DB1.DE",   "DEUTSCHE BOERSE": "DB1.DE",
+    "555750": "DTE.DE",   "TELEKOM": "DTE.DE",
+    "DTR0CK": "DTG.DE",   "DAIMLER TRUCK": "DTG.DE",
     "ENAG99": "EOAN.DE",  "EON": "EOAN.DE",
-    # US Tech (WKN -> US Ticker für beste Daten)
+    "604843": "HEN3.DE",  "HENKEL": "HEN3.DE",
+    "623100": "IFX.DE",   "INFINEON": "IFX.DE",
+    "710000": "MBG.DE",   "MERCEDES": "MBG.DE",
+    "843002": "MUV2.DE",  "MUENCHENER RUECK": "MUV2.DE",
+    "PAG911": "P911.DE",  "PORSCHE": "P911.DE",
+    "703712": "RWE.DE",   "RWE": "RWE.DE",
+    "716460": "SAP.DE",   "SAP": "SAP.DE",
+    "723610": "SIE.DE",   "SIEMENS": "SIE.DE",
+    "SHL100": "SHL.DE",   "SIEMENS HEALTHINEERS": "SHL.DE",
+    "766403": "VOW3.DE",  "VW": "VOW3.DE",
+    "A1ML7J": "VNA.DE",   "VONOVIA": "VNA.DE",
+    "938914": "AIR.DE",   "AIRBUS": "AIR.DE", # Oft in DE gehandelt
+
+    # --- USA (Tech & Blue Chips - WKN zu US-Ticker) ---
     "865985": "AAPL",     "APPLE": "AAPL",
     "870747": "MSFT",     "MICROSOFT": "MSFT",
     "906866": "AMZN",     "AMAZON": "AMZN",
     "A1CX3T": "TSLA",     "TESLA": "TSLA",
     "918422": "NVDA",     "NVIDIA": "NVDA",
-    "A14Y6F": "GOOGL",    "ALPHABET": "GOOGL",
+    "A14Y6F": "GOOGL",    "ALPHABET A": "GOOGL",
+    "A14Y6H": "GOOG",     "ALPHABET C": "GOOG",
+    "A1JWVX": "META",     "META": "META",
+    "552484": "NFLX",     "NETFLIX": "NFLX",
+    "A14R7U": "PYPL",     "PAYPAL": "PYPL",
     "A1J5X3": "ANGI",     "ANGI": "ANGI",
-    "A2QP7J": "GME",      "GAMESTOP": "GME"
+    "850663": "KO",       "COCA COLA": "KO",
+    "856958": "MCD",      "MCDONALDS": "MCD",
+    "A0M240": "V",        "VISA": "V",
+    "851399": "IBM",      "IBM": "IBM",
+    "860853": "DIS",      "DISNEY": "DIS",
+    "850517": "JPM",      "JP MORGAN": "JPM",
+    "A0YJQ2": "BRK-B",    "BERKSHIRE": "BRK-B"
 }
 
 # Seitenleiste
 st.sidebar.header("Filter-Einstellungen")
-st.sidebar.info("💡 **Neu: WKN Suche!**\nDu kannst jetzt auch WKNs eingeben (z.B. `716460` für SAP oder `865985` für Apple).")
+st.sidebar.info("💡 **Erweiterte WKN Suche!**\nUnterstützt jetzt fast alle DAX-Konzerne und die großen US-Tech-Werte.")
 
-# Standard-Liste
-default_inputs = "716460, 865985, NVDA, A1CX3T, ANGI"
-ticker_input = st.sidebar.text_area("Aktien-Liste (WKN oder Kürzel)", default_inputs)
+# Standard-Liste (Mix aus DE & US)
+default_inputs = "716460, 723610, 840400, 865985, 918422, A1CX3T, A1J5X3, 906866"
+ticker_input = st.sidebar.text_area("Aktien-Liste (WKN oder Kürzel)", default_inputs, height=150)
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 
 # Button zum Aktualisieren
@@ -66,7 +90,7 @@ if st.sidebar.button("🔄 Kurse prüfen"):
             df_hist = stock.history(period="300d")
             
             if not df_hist.empty and len(df_hist) > 14:
-                # RSI Berechnung
+                # RSI Berechnung (Wilder's Smoothing)
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -119,7 +143,7 @@ if st.sidebar.button("🔄 Kurse prüfen"):
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
                     results.append({
-                        "Name": name, # Neuer Name für bessere Übersicht
+                        "Name": name, 
                         "Kürzel": ticker,
                         "Kurs": round(current_price, 2),
                         "Währung": currency,
