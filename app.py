@@ -6,94 +6,51 @@ st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="w
 st.title("💎 Aktien-Radar: Global (WKN & Ticker)")
 
 # --- 1. DATENBANKEN ---
-# Listen für die Buttons
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
 US_TECH_LISTE = "865985, 870747, 906866, A1CX3T, 918422, A14Y6F, A1JWVX, 552484, A14R7U, A1J5X3, A2QP7J, 851399"
 GLOBAL_TOP_LISTE = "865985, 870747, 918422, 716460, 723610, 840400, 850663, 856958, A0M240, 850517"
-# Deine Favoriten (Beliebte Trader-Aktien Mix)
 FAVORITEN_LISTE = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE, LHA.DE, 865985"
 
-# Übersetzer: WKN/Name -> Ticker
 WKN_MAP = {
-    # DAX (Auszug)
-    "716460": "SAP.DE", "SAP": "SAP.DE",
-    "723610": "SIE.DE", "SIEMENS": "SIE.DE",
-    "840400": "ALV.DE", "ALLIANZ": "ALV.DE",
-    "710000": "MBG.DE", "MERCEDES": "MBG.DE",
-    "766403": "VOW3.DE", "VW": "VOW3.DE", "VOLKSWAGEN": "VOW3.DE",
-    "555750": "DTE.DE", "TELEKOM": "DTE.DE",
-    "BASF11": "BAS.DE", "BASF": "BAS.DE",
-    "BAY001": "BAYN.DE", "BAYER": "BAYN.DE",
-    "519000": "BMW.DE", "BMW": "BMW.DE",
-    "543900": "CON.DE", "CONTINENTAL": "CON.DE",
-    "CBK100": "CBK.DE", "COMMERZBANK": "CBK.DE",
-    "514000": "DBK.DE", "DEUTSCHE BANK": "DBK.DE",
-    "581005": "DB1.DE", "DEUTSCHE BOERSE": "DB1.DE",
-    "DTR0CK": "DTG.DE", "DAIMLER TRUCK": "DTG.DE",
-    "ENAG99": "EOAN.DE", "EON": "EOAN.DE",
-    "A1EWWW": "ADS.DE", "ADIDAS": "ADS.DE",
-    "604843": "HEN3.DE", "HENKEL": "HEN3.DE",
-    "623100": "IFX.DE", "INFINEON": "IFX.DE",
-    "843002": "MUV2.DE", "MUENCHENER RUECK": "MUV2.DE",
-    "PAG911": "P911.DE", "PORSCHE": "P911.DE",
-    "703712": "RWE.DE", "RWE": "RWE.DE",
-    "SHL100": "SHL.DE", "SIEMENS HEALTH": "SHL.DE",
-    "A1ML7J": "VNA.DE", "VONOVIA": "VNA.DE",
-    "938914": "AIR.DE", "AIRBUS": "AIR.DE",
-    "703000": "RHM.DE", "RHEINMETALL": "RHM.DE",
-    "TUAG50": "TUI1.DE", "TUI": "TUI1.DE",
-    "823212": "LHA.DE", "LUFTHANSA": "LHA.DE",
+    # DAX
+    "716460": "SAP.DE", "SAP": "SAP.DE", "723610": "SIE.DE", "SIEMENS": "SIE.DE", "840400": "ALV.DE", "ALLIANZ": "ALV.DE",
+    "710000": "MBG.DE", "MERCEDES": "MBG.DE", "766403": "VOW3.DE", "VW": "VOW3.DE", "555750": "DTE.DE", "TELEKOM": "DTE.DE",
+    "BASF11": "BAS.DE", "BASF": "BAS.DE", "BAY001": "BAYN.DE", "BAYER": "BAYN.DE", "519000": "BMW.DE", "BMW": "BMW.DE",
+    "543900": "CON.DE", "CONTINENTAL": "CON.DE", "CBK100": "CBK.DE", "COMMERZBANK": "CBK.DE", "514000": "DBK.DE", "DEUTSCHE BANK": "DBK.DE",
+    "581005": "DB1.DE", "DEUTSCHE BOERSE": "DB1.DE", "DTR0CK": "DTG.DE", "DAIMLER TRUCK": "DTG.DE", "ENAG99": "EOAN.DE", "EON": "EOAN.DE",
+    "A1EWWW": "ADS.DE", "ADIDAS": "ADS.DE", "604843": "HEN3.DE", "HENKEL": "HEN3.DE", "623100": "IFX.DE", "INFINEON": "IFX.DE",
+    "843002": "MUV2.DE", "MUENCHENER RUECK": "MUV2.DE", "PAG911": "P911.DE", "PORSCHE": "P911.DE", "703712": "RWE.DE", "RWE": "RWE.DE",
+    "SHL100": "SHL.DE", "SIEMENS HEALTH": "SHL.DE", "A1ML7J": "VNA.DE", "VONOVIA": "VNA.DE", "938914": "AIR.DE", "AIRBUS": "AIR.DE",
+    "703000": "RHM.DE", "RHEINMETALL": "RHM.DE", "TUAG50": "TUI1.DE", "TUI": "TUI1.DE", "823212": "LHA.DE", "LUFTHANSA": "LHA.DE",
     # US & International
-    "865985": "AAPL", "APPLE": "AAPL",
-    "870747": "MSFT", "MICROSOFT": "MSFT",
-    "906866": "AMZN", "AMAZON": "AMZN",
-    "A1CX3T": "TSLA", "TESLA": "TSLA",
-    "918422": "NVDA", "NVIDIA": "NVDA",
-    "A14Y6F": "GOOGL", "ALPHABET": "GOOGL", "GOOGLE": "GOOGL",
-    "A1JWVX": "META", "META": "META", "FACEBOOK": "META",
-    "552484": "NFLX", "NETFLIX": "NFLX",
-    "A14R7U": "PYPL", "PAYPAL": "PYPL",
-    "A1J5X3": "ANGI", "ANGI": "ANGI",
-    "A2QP7J": "GME", "GAMESTOP": "GME",
-    "A0F5UF": "PLTR", "PALANTIR": "PLTR",
-    "A2QP7J": "COIN", "COINBASE": "COIN",
-    "863186": "AMD",  "AMD": "AMD",
-    "850663": "KO", "COCA COLA": "KO",
-    "856958": "MCD", "MCDONALDS": "MCD",
-    "A0M240": "V", "VISA": "V",
-    "851399": "IBM", "IBM": "IBM",
-    "860853": "DIS", "DISNEY": "DIS",
-    "850517": "JPM", "JP MORGAN": "JPM",
-    "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
+    "865985": "AAPL", "APPLE": "AAPL", "870747": "MSFT", "MICROSOFT": "MSFT", "906866": "AMZN", "AMAZON": "AMZN",
+    "A1CX3T": "TSLA", "TESLA": "TSLA", "918422": "NVDA", "NVIDIA": "NVDA", "A14Y6F": "GOOGL", "ALPHABET": "GOOGL",
+    "A1JWVX": "META", "META": "META", "552484": "NFLX", "NETFLIX": "NFLX", "A14R7U": "PYPL", "PAYPAL": "PYPL",
+    "A1J5X3": "ANGI", "ANGI": "ANGI", "A2QP7J": "GME", "GAMESTOP": "GME", "A0F5UF": "PLTR", "PALANTIR": "PLTR",
+    "A2QP7J": "COIN", "COINBASE": "COIN", "863186": "AMD", "AMD": "AMD", "850663": "KO", "COCA COLA": "KO",
+    "856958": "MCD", "MCDONALDS": "MCD", "A0M240": "V", "VISA": "V", "851399": "IBM", "IBM": "IBM",
+    "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
 }
 
 # --- 2. SEITENLEISTE MIT LOGIK ---
 st.sidebar.header("1. Listen laden")
-# Session State initialisieren
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-# Buttons zum Laden der Listen (jetzt 4 Stück in 2 Reihen)
 col1, col2 = st.sidebar.columns(2)
 with col1:
-    if st.button("🇩🇪 DAX Liste"):
-        st.session_state['ticker_text'] = DAX_LISTE
+    if st.button("🇩🇪 DAX Liste"): st.session_state['ticker_text'] = DAX_LISTE
 with col2:
-    if st.button("🇺🇸 US Tech"):
-        st.session_state['ticker_text'] = US_TECH_LISTE
+    if st.button("🇺🇸 US Tech"): st.session_state['ticker_text'] = US_TECH_LISTE
 
 col3, col4 = st.sidebar.columns(2)
 with col3:
-    if st.button("🌍 Global Top"):
-        st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
+    if st.button("🌍 Global Top"): st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
 with col4:
-    if st.button("⭐ Favoriten"):
-        st.session_state['ticker_text'] = FAVORITEN_LISTE
+    if st.button("⭐ Favoriten"): st.session_state['ticker_text'] = FAVORITEN_LISTE
 
 st.sidebar.header("2. Manuelle Eingabe")
-ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", 
-                                    value=st.session_state['ticker_text'], 
-                                    height=150)
+ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", value=st.session_state['ticker_text'], height=150)
 
 st.sidebar.header("3. Filter")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
@@ -101,16 +58,12 @@ rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 # --- 3. HAUPTPROGRAMM ---
 if st.button("🚀 Scanner starten", type="primary"):
     
-    # Eingabe säubern und übersetzen
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
     
-    # Intelligente Übersetzung
     for item in raw_inputs:
-        if item in WKN_MAP:
-            tickers.append(WKN_MAP[item])
-        else:
-            tickers.append(item) # Unbekannte Eingabe wird als Ticker versucht
+        if item in WKN_MAP: tickers.append(WKN_MAP[item])
+        else: tickers.append(item)
             
     results = []
     news_data = {}
@@ -123,12 +76,10 @@ if st.button("🚀 Scanner starten", type="primary"):
         status_text.text(f"Analysiere ({i+1}/{total_tickers}): {ticker}...")
         try:
             stock = yf.Ticker(ticker)
-            
-            # Historie laden (300 Tage für stabilen RSI)
             df_hist = stock.history(period="300d")
             
             if not df_hist.empty and len(df_hist) > 14:
-                # RSI Wilder's Smoothing
+                # RSI Berechnung
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -136,63 +87,47 @@ if st.button("🚀 Scanner starten", type="primary"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # Fundamentaldaten
                 info = stock.info
                 name = info.get('shortName') or info.get('longName') or ticker
                 currency = info.get('currency', '?')
                 
-                # Preise
+                # Preise & Trends
                 current_price = info.get('currentPrice') or info.get('regularMarketPrice') or df_hist['Close'].iloc[-1]
                 previous_close = info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((current_price - previous_close) / previous_close) * 100 if current_price and previous_close else 0
                 
-                # Kursziele
+                # Fundamentaldaten
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
-                
-                # Wachstum & PEG
                 rev_growth = info.get('revenueGrowth', 0) 
                 peg_ratio = info.get('pegRatio') or info.get('trailingPegRatio')
                 
-                # Gewinn (letztes Quartal)
                 try:
                     last_q_profit = stock.quarterly_financials.loc['Net Income'].iloc[0] / 1_000_000
                 except:
                     last_q_profit = None
 
-                # Bewertung-Status
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
                 if upside < 0: status = "Überbewertet"
 
                 if rsi_val <= rsi_limit:
-                    # Formatierung
                     peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
                     if peg_ratio is None and info.get('forwardPE', -1) < 0: peg_display = "Verlust"
-                    
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
                     results.append({
-                        "Name": name, 
-                        "Kürzel": ticker,
-                        "Kurs": f"{round(current_price, 2)} {currency}",
-                        "Trend": f"{round(change_pct, 2)}%",
-                        "RSI (14)": round(float(rsi_val), 1),
-                        "Umsatz-Wachst.": growth_display, 
-                        "PEG": peg_display,
-                        "Erw. Gewinn (%)": round(upside, 1), 
-                        "Bewertung": status
+                        "Name": name, "Kürzel": ticker, "Kurs": f"{round(current_price, 2)} {currency}",
+                        "Trend": f"{round(change_pct, 2)}%", "RSI (14)": round(float(rsi_val), 1),
+                        "Umsatz-Wachst.": growth_display, "PEG": peg_display,
+                        "Erw. Gewinn (%)": round(upside, 1), "Bewertung": status
                     })
                     
-                    # News
                     try:
                         news_data[ticker] = stock.news[:3] if stock.news else []
                     except:
                         news_data[ticker] = []
-                        
         except Exception:
             continue
-        
-        # Fortschrittsbalken
         progress_bar.progress((i + 1) / total_tickers)
             
     status_text.empty()
@@ -205,20 +140,16 @@ if st.button("🚀 Scanner starten", type="primary"):
         # Styling
         def style_change(val):
             if "%" in str(val):
-                num = float(val.strip('%'))
-                return 'color: green' if num > 0 else 'color: red'
+                return 'color: green' if float(val.strip('%')) > 0 else 'color: red'
             return ''
-            
         def highlight_valuation(val):
             return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
-
         def style_rsi(val):
             try:
                 if float(val) < 30: return 'color: green; font-weight: bold'
                 elif float(val) > 70: return 'color: red'
             except: pass
             return ''
-
         def style_peg(val):
             if val == "Verlust": return 'color: red'
             try:
@@ -227,13 +158,44 @@ if st.button("🚀 Scanner starten", type="primary"):
             except: pass
             return ''
 
-        st.dataframe(df_res.style
-                     .applymap(style_change, subset=['Trend'])
+        st.dataframe(df_res.style.applymap(style_change, subset=['Trend'])
                      .applymap(highlight_valuation, subset=['Bewertung'])
                      .applymap(style_rsi, subset=['RSI (14)'])
-                     .applymap(style_peg, subset=['PEG']), 
-                     use_container_width=True)
+                     .applymap(style_peg, subset=['PEG']), use_container_width=True)
         
+        # --- NEU: CHART-ANALYSE ---
+        st.divider()
+        st.subheader("📉 Chart-Analyse")
+        
+        # Dropdown zur Auswahl einer Aktie aus den Ergebnissen
+        if results:
+            selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
+                                           [r['Kürzel'] for r in results])
+            
+            if selected_ticker:
+                st.write(f"### Preis & RSI Verlauf: {selected_ticker}")
+                # Daten erneut laden für sauberen Chart
+                chart_stock = yf.Ticker(selected_ticker)
+                chart_df = chart_stock.history(period="1y")
+                
+                if not chart_df.empty:
+                    # RSI Berechnung für Chart
+                    delta = chart_df['Close'].diff()
+                    gain = delta.where(delta > 0, 0)
+                    loss = -delta.where(delta < 0, 0)
+                    avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+                    avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+                    chart_df['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+                    
+                    # Chart 1: Preis
+                    st.line_chart(chart_df['Close'])
+                    
+                    # Chart 2: RSI mit Hilfslinien
+                    chart_df['Overbought'] = 70
+                    chart_df['Oversold'] = 30
+                    st.line_chart(chart_df[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
+                    st.caption("Blau: RSI | Rot: Überkauft (70) | Grün: Überverkauft (30)")
+
         st.divider()
         st.subheader("📰 Nachrichten-Ticker")
         for ticker in news_data:
@@ -242,7 +204,6 @@ if st.button("🚀 Scanner starten", type="primary"):
                 if t == ticker and len(wkn) == 6: 
                     display_name = f"{wkn} ({ticker})"
                     break
-                    
             with st.expander(f"Infos zu {display_name}"):
                 articles = news_data.get(ticker, [])
                 if articles:
