@@ -70,7 +70,6 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
                     if peg_ratio is not None:
                         peg_display = round(peg_ratio, 2)
                     else:
-                        # Wenn immer noch kein PEG da ist, prüfen wir warum
                         fwd_pe = info.get('forwardPE')
                         if fwd_pe is None or fwd_pe < 0:
                             peg_display = "Verlust (Kein PEG)"
@@ -109,7 +108,7 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
         st.subheader("📊 Live-Marktübersicht")
         df_res = pd.DataFrame(results)
         
-        # Styling
+        # Styling Funktionen
         def style_change(val):
             if isinstance(val, str) and "%" in val:
                 num = float(val.strip('%'))
@@ -119,9 +118,21 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
         def highlight_valuation(val):
             return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
 
+        def style_rsi(val):
+            try:
+                if float(val) < 30:
+                    return 'color: green; font-weight: bold'
+                elif float(val) > 70:
+                    return 'color: red'
+            except:
+                pass
+            return ''
+
+        # Styling anwenden
         st.dataframe(df_res.style
                      .applymap(style_change, subset=['Trend'])
-                     .applymap(highlight_valuation, subset=['Bewertung']), 
+                     .applymap(highlight_valuation, subset=['Bewertung'])
+                     .applymap(style_rsi, subset=['RSI (14)']), 
                      use_container_width=True)
         
         st.divider()
