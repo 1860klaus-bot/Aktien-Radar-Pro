@@ -108,56 +108,56 @@ if st.sidebar.button("🔄 Weltweite Kurse prüfen"):
             
     status_text.empty()
     
-    wenn Ergebnisse:
- st.Unterüberschrift(„🌍 Globaler Marktüberblick“)
- df_res = pd.DataFrame(Erbnisse)
+    if results:
+        st.subheader("🌍 Globale Marktübersicht")
+        df_res = pd.DataFrame(results)
         
         # Styling
-        def Stil_Änderung(val):
- wenn isinstance(val, str) und "%" in Wert:
- num = Schweben(Wert.Streifen('%'))
- Zurückgeben 'Farbe: grün' wenn Nummer > 0 sonst 'Farbe: rot'
- Zurückgeben ''
+        def style_change(val):
+            if isinstance(val, str) and "%" in val:
+                num = float(val.strip('%'))
+                return 'color: green' if num > 0 else 'color: red'
+            return ''
             
- def highlight_bewährung(val):
- Rückgeben 'Hintergrundfarbe: #90EE90; Farbe: schwarz' wenn val == "Unterbewortet" sonst ''
+        def highlight_valuation(val):
+            return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
 
- def Stil_rsi(val):
- versuchen:
- wenn schweben(val) < 30: zurückgeben „Farbe: grün; Schriftstücke: fett“
- Elif schweben(val) > 70: zurückgeben 'Farbe: rot'
- außer: passieren
- Zurückgeben ''
+        def style_rsi(val):
+            try:
+                if float(val) < 30: return 'color: green; font-weight: bold'
+                elif float(val) > 70: return 'color: red'
+            except: pass
+            return ''
 
- def Stil_peg(val):
- versuchen:
- num = schweben(val)
- wenn Nummer > 1: kurzgeben 'Farbe: rot'
- Elif Nummer > 0: zurückgeben 'Farbe: grün'
- außer: passieren
- Zurückgeben ''
+        def style_peg(val):
+            try:
+                num = float(val)
+                if num > 1: return 'color: red'
+                elif num > 0: return 'color: green'
+            except: pass
+            return ''
 
- st.Datenrahmen(df_res.Stil
- .Applikemap (style_change, Teilmenge=['Trend'])
- .Applikemap (highlight_valuation, Teilmenge=['Bewährung'])
- .Applikemap (style_rsi, Teilmenge=['RSI (14)'])
- .Applikemap (style_peg, Teilmenge=['PEG']), 
- use_container_width=Wahr)
+        st.dataframe(df_res.style
+                     .applymap(style_change, subset=['Trend'])
+                     .applymap(highlight_valuation, subset=['Bewertung'])
+                     .applymap(style_rsi, subset=['RSI (14)'])
+                     .applymap(style_peg, subset=['PEG']), 
+                     use_container_width=True)
         
- st.Teiler ()
- st.Unterüberschrift("📰 Nachrichten-Ticker")
- für Ticker in news_data:
- mit st.Expander(f"Infos zu {Ticker}"):
- Artikel = Nachrichten_Daten[Ticker]
- wenn Artikel:
- für Artikel in Artikel:
- t = Artikel.bekommen('Titel') oder Artikel.bekommen('Überschrift') oder "Neuigkeiten"
- l = Artikel.bekommen('Link') oder Artikel.bekommen('URL') oder f"https://de.finance.yahoo.com/quote/{Ticker}"
- Kneipe = Artikel.bekommen('Verlag') oder "Yahoo"
- st.Markdown(f"**[{t}]({l})**")
- st.Untertitel(f"Quelle: {Kneipe}")
- sonst:
- # Link zur deutschen Yahoo Seite
- st.Info(f"Keine direkten Nachrichten. [Hier klicken für Yahoo Finanzen DE](https://de.finance.yahoo.com/quote/{Ticker})")
- sonst:
- st.Warnung(„Keine Treffer unter dem Limit“)
+        st.divider()
+        st.subheader("📰 Nachrichten-Ticker")
+        for ticker in news_data:
+            with st.expander(f"Infos zu {ticker}"):
+                articles = news_data[ticker]
+                if articles:
+                    for item in articles:
+                        t = item.get('title') or item.get('headline') or "News"
+                        l = item.get('link') or item.get('url') or f"https://de.finance.yahoo.com/quote/{ticker}"
+                        pub = item.get('publisher') or "Yahoo"
+                        st.markdown(f"**[{t}]({l})**")
+                        st.caption(f"Quelle: {pub}")
+                else:
+                    # Link zur deutschen Yahoo Seite
+                    st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen DE](https://de.finance.yahoo.com/quote/{ticker})")
+    else:
+        st.warning("Keine Treffer unter dem Limit.")
