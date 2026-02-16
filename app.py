@@ -163,23 +163,38 @@ if st.button("🚀 Scanner starten", type="primary"):
                      .applymap(style_rsi, subset=['RSI (14)'])
                      .applymap(style_peg, subset=['PEG']), use_container_width=True)
         
-        # --- NEU: CHART-ANALYSE ---
+        # --- CHART-ANALYSE MIT BOLLINGER, TREND & SMA 50 ---
         st.divider()
-        st.subheader("📉 Chart-Analyse")
+        st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
         
-        # Dropdown zur Auswahl einer Aktie aus den Ergebnissen
         if results:
             selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
                                            [r['Kürzel'] for r in results])
             
             if selected_ticker:
-                st.write(f"### Preis & RSI Verlauf: {selected_ticker}")
-                # Daten erneut laden für sauberen Chart
+                st.write(f"### Analyse: {selected_ticker}")
                 chart_stock = yf.Ticker(selected_ticker)
-                chart_df = chart_stock.history(period="1y")
+                chart_df = chart_stock.history(period="2y")
                 
                 if not chart_df.empty:
-                    # RSI Berechnung für Chart
+                    # 1. Bollinger Bänder
+                    chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
+                    chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
+                    chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
+                    chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
+                    
+                    # 2. Trends: SMA 200 & SMA 50
+                    chart_df['Trend (SMA 200)'] = chart_df['Close'].rolling(window=200).mean()
+                    chart_df['Trend (SMA 50)'] = chart_df['Close'].rolling(window=50).mean()
+                    
+                    # Daten anzeigen (letzte 250 Tage)
+                    plot_df = chart_df.iloc[-250:].copy()
+                    
+                    # Chart 1: Preis, Bänder, SMA 200, SMA 50
+                    st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
+                    st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig). Ein Kreuzen der Linien ist oft ein wichtiges Signal.")
+
+                    # Chart 2: RSI
                     delta = chart_df['Close'].diff()
                     gain = delta.where(delta > 0, 0)
                     loss = -delta.where(delta < 0, 0)
@@ -187,14 +202,11 @@ if st.button("🚀 Scanner starten", type="primary"):
                     avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                     chart_df['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
                     
-                    # Chart 1: Preis
-                    st.line_chart(chart_df['Close'])
+                    rsi_plot = chart_df.iloc[-250:].copy()
+                    rsi_plot['Overbought'] = 70
+                    rsi_plot['Oversold'] = 30
                     
-                    # Chart 2: RSI mit Hilfslinien
-                    chart_df['Overbought'] = 70
-                    chart_df['Oversold'] = 30
-                    st.line_chart(chart_df[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
-                    st.caption("Blau: RSI | Rot: Überkauft (70) | Grün: Überverkauft (30)")
+                    st.line_chart(rsi_plot[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
 
         st.divider()
         st.subheader("📰 Nachrichten-Ticker")
