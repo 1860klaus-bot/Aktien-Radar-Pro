@@ -128,11 +128,24 @@ if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
                 pass
             return ''
 
+        def style_peg(val):
+            try:
+                # Versuche den Wert in eine Zahl umzuwandeln
+                num = float(val)
+                if num > 1:
+                    return 'color: red'
+                elif num > 0: # Grün für Werte zwischen 0 und 1
+                    return 'color: green'
+            except:
+                pass
+            return ''
+
         # Styling anwenden
         st.dataframe(df_res.style
                      .applymap(style_change, subset=['Trend'])
                      .applymap(highlight_valuation, subset=['Bewertung'])
-                     .applymap(style_rsi, subset=['RSI (14)']), 
+                     .applymap(style_rsi, subset=['RSI (14)'])
+                     .applymap(style_peg, subset=['PEG Ratio']), 
                      use_container_width=True)
         
         st.divider()
