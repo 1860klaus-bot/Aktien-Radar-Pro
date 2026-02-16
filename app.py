@@ -2,104 +2,60 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# Seitentitel
-st.set_page_config(page_title="Aktien Scanner Pro", layout="wide")
-st.title("📈 Aktien Scanner: RSI & Fundamentalanalyse")
+# Konfiguration
+st.set_page_config(page_title="Aktien-Radar Pro", page_icon="💎", layout="wide")
+st.title("💎 Aktien-Radar Pro")
+st.markdown("Technische Analyse (RSI) & Fundamentaldaten (Umsatz & Gewinn)")
 
-# Sidebar für Eingaben
-st.sidebar.header("Einstellungen")
-tickers_input = st.sidebar.text_area("Aktien-Symbole (kommagetrennt)", "AAPL, MSFT, TSLA, NVDA, GOOGL, AMZN, META, AMD, INTC, PYPL")
-rsi_window = st.sidebar.slider("RSI Zeitraum", 10, 30, 14)
+# Seitenleiste
+st.sidebar.header("Filter-Einstellungen")
+ticker_input = st.sidebar.text_area("Aktien-Liste (Kürzel mit Komma)", "NVDA,TSLA,AMD,AAPL,ANGI,MSFT")
+rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 60)
+min_growth = st.sidebar.slider("Min. Umsatzwachstum (%)", -50, 100, 5)
 
-# Funktion zur RSI Berechnung
-def calculate_rsi(data, window=14):
-    delta = data['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-# Daten abrufen und analysieren
-if st.sidebar.button("Analyse starten"):
-    tickers = [x.strip() for x in tickers_input.split(',')]
-    analysis_data = []
-
-    progress_bar = st.progress(0)
+if st.sidebar.button("🚀 Scanner starten"):
+    tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
+    results = []
+    status_text = st.empty()
     
-    for i, ticker in enumerate(tickers):
+    for ticker in tickers:
+        status_text.text(f"Analysiere {ticker}...")
         try:
-            # 1. Historische Daten für RSI laden (letzte 3 Monate reichen)
             stock = yf.Ticker(ticker)
-            hist = stock.history(period="3mo")
-            
-            if len(hist) > rsi_window:
-                # RSI Berechnen
-                hist['RSI'] = calculate_rsi(hist, rsi_window)
-                current_rsi = hist['RSI'].iloc[-1]
+            # 1. Profi-RSI (Wilder's Smoothing) mit 200 Tagen Historie
+            df = stock.history(period="200d")
+            if len(df) > 14:
+                delta = df['Close'].diff()
+                gain = delta.where(delta > 0, 0)
+                loss = -delta.where(delta < 0, 0)
                 
-                # 2. Fundamentaldaten laden
+                # alpha=1/14 entspricht der offiziellen RSI-Glättung
+                avg_gain = gain.ewm(alpha=1/14, min_periods=14).mean()
+                avg_loss = loss.ewm(alpha=1/14, min_periods=14).mean()
+                
+                rs = avg_gain / avg_loss
+                rsi_val = 100 - (100 / (1 + rs)).iloc[-1]
+                
+                # 2. Fundamentaldaten abrufen
                 info = stock.info
+                rev_growth = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0
+                fwd_pe = info.get('forwardPE', 0) # Erwartetes KGV (Gewinnausblick)
                 
-                # Relevante Kennzahlen extrahieren
-                current_price = info.get('currentPrice', 0)
-                forward_pe = info.get('forwardPE', None) # Erwartetes KGV
-                rev_growth = info.get('revenueGrowth', 0) # Umsatzwachstum
-                target_price = info.get('targetMeanPrice', 0) # Kursziel der Analysten
-                
-                # Bewertung Logik (Vereinfacht)
-                valuation_status = "Neutral"
-                if forward_pe:
-                    if forward_pe < 15: valuation_status = "Unterbewertet (Günstig)"
-                    elif forward_pe > 35: valuation_status = "Überbewertet (Teuer)"
-                
-                # Potenzial berechnen
-                upside = 0
-                if target_price and current_price:
-                    upside = ((target_price - current_price) / current_price) * 100
-
-                analysis_data.append({
-                    "Symbol": ticker,
-                    "Preis ($)": round(current_price, 2),
-                    "RSI (14)": round(current_rsi, 2),
-                    "Bewertung (KGV fwd)": round(forward_pe, 2) if forward_pe else "N/A",
-                    "Status": valuation_status,
-                    "Umsatzwachstum (%)": round(rev_growth * 100, 2) if rev_growth else "N/A",
-                    "Analysten Ziel ($)": target_price,
-                    "Potenzial (%)": round(upside, 2)
-                })
-        except Exception as e:
-            st.error(f"Fehler bei {ticker}: {e}")
-        
-        # Fortschrittsbalken updaten
-        progress_bar.progress((i + 1) / len(tickers))
-
-    # Ergebnisse anzeigen
-    if analysis_data:
-        df = pd.DataFrame(analysis_data)
-        
-        # Styling des Dataframes
-        def highlight_opportunities(row):
-            colors = [''] * len(row)
-            # RSI Logik: Grün wenn überverkauft (<30), Rot wenn überkauft (>70)
-            if row['RSI (14)'] < 30:
-                colors[2] = 'background-color: #90EE90; color: black' # Hellgrün
-            elif row['RSI (14)'] > 70:
-                colors[2] = 'background-color: #FF7F7F; color: black' # Rot
+                # Filter anwenden
+                if rsi_val <= rsi_limit and rev_growth >= min_growth:
+                    results.append({
+                        "Ticker": ticker,
+                        "Kurs ($)": round(df['Close'].iloc[-1], 2),
+                        "RSI (14)": round(float(rsi_val), 2),
+                        "Umsatzwachstum (%)": f"{round(rev_growth, 2)}%",
+                        "KGV (fwd)": round(fwd_pe, 2) if fwd_pe > 0 else "N/A"
+                    })
+        except:
+            continue
             
-            # Potenzial Logik: Grün wenn > 20% Potenzial
-            if row['Potenzial (%)'] > 20:
-                 colors[7] = 'background-color: #90EE90; color: black'
-            
-            return colors
-
-        st.subheader("Analyse Ergebnisse")
-        st.dataframe(df.style.apply(highlight_opportunities, axis=1), use_container_width=True)
-        
-        st.markdown("""
-        **Legende:**
-        * **RSI < 30:** Aktie ist technisch "überverkauft" (könnte steigen).
-        * **RSI > 70:** Aktie ist technisch "überkauft" (könnte fallen).
-        * **Potenzial:** Basierend auf dem durchschnittlichen Kursziel der Analysten.
-        """)
+    status_text.empty()
+    if results:
+        st.success(f"Analyse abgeschlossen: {len(results)} Treffer")
+        st.table(pd.DataFrame(results))
     else:
-        st.warning("Keine Daten gefunden.")
+        st.warning("Keine Aktien mit diesen Kriterien gefunden.")
