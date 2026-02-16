@@ -16,13 +16,13 @@ if st.sidebar.button("🚀 Profi-Analyse starten"):
     status_text = st.empty()
     
     for ticker in tickers:
-        status_text.text(f"Analysiere Fundamentaldaten: {ticker}...")
+        status_text.text(f"Analysiere Finanzen & Technik: {ticker}...")
         try:
             stock = yf.Ticker(ticker)
             # 1. Präziser RSI (300 Tage Historie)
-            df = stock.history(period="300d")
-            if len(df) > 14:
-                delta = df['Close'].diff()
+            df_hist = stock.history(period="300d")
+            if len(df_hist) > 14:
+                delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
                 avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
@@ -30,37 +30,38 @@ if st.sidebar.button("🚀 Profi-Analyse starten"):
                 rs = avg_gain / avg_loss
                 rsi_val = 100 - (100 / (1 + rs)).iloc[-1]
                 
-                # 2. Fundamentaldaten & Analysten
+                # 2. Fundamentaldaten
                 info = stock.info
-                current_price = df['Close'].iloc[-1]
+                current_price = df_hist['Close'].iloc[-1]
                 rev_growth = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 0
                 fwd_pe = info.get('forwardPE', 0)
-                target_price = info.get('targetMeanPrice', 0) # Erwartetes Kursziel
+                target_price = info.get('targetMeanPrice', 0)
                 
-                # Potenzial berechnen
-                upside = 0
-                if target_price and target_price > 0:
-                    upside = ((target_price - current_price) / current_price) * 100
+                # 3. Quartalsgewinn (Net Income) holen
+                try:
+                    q_financials = stock.quarterly_financials
+                    last_q_profit = q_financials.loc['Net Income'].iloc[0] / 1_000_000 # In Millionen
+                except:
+                    last_q_profit = 0
+
+                # Potenzial & Bewertung
+                upside = ((target_price - current_price) / current_price) * 100 if target_price > 0 else 0
                 
-                # Bewertung-Logik (Einfach)
                 status = "Neutral"
-                if upside > 15 and rsi_val < 40:
-                    status = "Unterbewertet (Kaufchance)"
+                if upside > 15 and rsi_val < 45:
+                    status = "Unterbewertet"
                 elif upside < 0 or (fwd_pe > 50 and rsi_val > 70):
-                    status = "Überbewertet (Vorsicht)"
-                elif upside > 0:
-                    status = "Fair bewertet / Potenzial"
+                    status = "Überbewertet"
 
                 if rsi_val <= rsi_limit:
                     results.append({
                         "Ticker": ticker,
-                        "Kurs ($)": round(current_price, 2),
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Umsatz-Wachst.": f"{round(rev_growth, 1)}%",
+                        "Erw. Gewinn (%)": round(upside, 1),
+                        "Bewertung": status,
+                        "Letzter Q-Gewinn (Mio $)": round(last_q_profit, 2),
                         "KGV (fwd)": round(fwd_pe, 1) if fwd_pe > 0 else "N/A",
-                        "Analysten-Ziel ($)": round(target_price, 2) if target_price > 0 else "N/A",
-                        "Erw. Gewinn (%)": f"{round(upside, 1)}%",
-                        "Bewertung": status
+                        "Umsatz-Wachst.": f"{round(rev_growth, 1)}%"
                     })
         except:
             continue
@@ -68,7 +69,13 @@ if st.sidebar.button("🚀 Profi-Analyse starten"):
     status_text.empty()
     if results:
         df_res = pd.DataFrame(results)
-        # Tabelle anzeigen mit farblicher Hervorhebung (optional)
-        st.table(df_res)
+        
+        # Styling-Funktion für die grüne Farbe
+        def highlight_valuation(val):
+            color = 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
+            return color
+
+        # Tabelle mit Styling anzeigen
+        st.dataframe(df_res.style.applymap(highlight_valuation, subset=['Bewertung']), use_container_width=True)
     else:
-        st.warning("Keine Treffer unter dem eingestellten RSI-Limit.")
+        st.warning("Keine Treffer unter dem Limit.")
