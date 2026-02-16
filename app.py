@@ -20,8 +20,8 @@ if st.sidebar.button("🚀 Voll-Analyse starten"):
         try:
             stock = yf.Ticker(ticker)
             df_hist = stock.history(period="300d")
-            if len(df_hist) > 14:
-                # Exakter RSI
+            if not df_hist.empty and len(df_hist) > 14:
+                # RSI Berechnung
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -29,7 +29,7 @@ if st.sidebar.button("🚀 Voll-Analyse starten"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # Finanzen
+                # Fundamentaldaten
                 info = stock.info
                 price = df_hist['Close'].iloc[-1]
                 target = info.get('targetMeanPrice', 0)
@@ -50,9 +50,8 @@ if st.sidebar.button("🚀 Voll-Analyse starten"):
                         "Letzter Q-Gewinn (Mio $)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
                         "KGV (fwd)": round(info.get('forwardPE', 0), 1) if info.get('forwardPE', 0) else "N/A"
                     })
-                    # Sicherer News-Abruf
-                    raw_news = stock.news[:3]
-                    news_data[ticker] = raw_news
+                    # News-Abruf
+                    news_data[ticker] = stock.news[:5] # Wir laden 5 News für mehr Treffer
         except:
             continue
             
@@ -68,9 +67,15 @@ if st.sidebar.button("🚀 Voll-Analyse starten"):
             with st.expander(f"Nachrichten für {ticker}"):
                 if items:
                     for item in items:
-                        # Hier nutzen wir .get(), damit es nicht mehr zum KeyError kommt
-                        title = item.get('title', 'Kein Titel verfügbar')
-                        link = item.get('link', '#')
-                        st.markdown(f"**[{title}]({link})**")
+                        # Wir versuchen verschiedene Felder, falls Yahoo das Format ändert
+                        title = item.get('title') or item.get('summary') or "Kein Titel"
+                        link = item.get('link') or item.get('url') or "#"
+                        publisher = item.get('publisher') or item.get('source') or "Quelle unbekannt"
+                        
+                        if title != "Kein Titel":
+                            st.markdown(f"**[{title}]({link})**")
+                            st.caption(f"Quelle: {publisher}")
                 else:
-                    st.write("Keine News gefunden.")
+                    st.write("Momentan keine aktuellen Nachrichten für diesen Ticker gefunden.")
+    else:
+        st.warning("Keine Treffer unter dem Limit.")
