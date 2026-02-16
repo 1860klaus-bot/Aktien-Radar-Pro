@@ -11,7 +11,7 @@ ticker_input = st.sidebar.text_area("Aktien-Liste (Kürzel mit Komma)", "NVDA,TS
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 
 # Button zum Aktualisieren
-if st.sidebar.button("🔄 Kurse aktualisieren"):
+if st.sidebar.button("🔄 Kurse & Wachstum prüfen"):
     tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     results = []
     news_data = {}
@@ -37,42 +37,47 @@ if st.sidebar.button("🔄 Kurse aktualisieren"):
                 # 2. LIVE-Daten & Fundamentales
                 info = stock.info
                 
-                # Hier holen wir den aktuellsten verfügbaren Preis (Live-Indikation)
+                # Preise
                 current_price = info.get('currentPrice') or info.get('regularMarketPrice') or df_hist['Close'].iloc[-1]
                 previous_close = info.get('previousClose') or df_hist['Close'].iloc[-2]
+                change_pct = ((current_price - previous_close) / previous_close) * 100 if current_price and previous_close else 0
                 
-                # Tages-Veränderung berechnen
-                change_pct = 0
-                if current_price and previous_close:
-                    change_pct = ((current_price - previous_close) / previous_close) * 100
-                
-                # Kursziele
+                # Kursziele & Potenzial
                 target = info.get('targetMeanPrice', 0)
-                upside = ((target - current_price) / current_price) * 100 if target > 0 else 0
+                upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
                 
-                # Gewinn
+                # Umsatz & Wachstum (Zukunft)
+                rev_growth = info.get('revenueGrowth', 0) # Aktuelles Wachstum (YOY)
+                peg_ratio = info.get('pegRatio', None)    # Bewertung relativ zum zukünftigen Wachstum
+                
+                # Gewinn (letztes Quartal)
                 try:
                     last_q_profit = stock.quarterly_financials.loc['Net Income'].iloc[0] / 1_000_000
                 except:
                     last_q_profit = None
 
-                # Bewertung
+                # Bewertung-Status
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
                 if upside < 0: status = "Überbewertet"
 
+                # Daten aufbereiten
                 if rsi_val <= rsi_limit:
+                    peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
+                    growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
+                    
                     results.append({
                         "Ticker": ticker, 
-                        "Kurs aktuell ($)": round(current_price, 2),
-                        "Trend heute": f"{round(change_pct, 2)}%",
+                        "Kurs ($)": round(current_price, 2),
+                        "Trend": f"{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
+                        "Umsatz-Wachstum": growth_display,  # NEU
+                        "PEG Ratio (Zukunft)": peg_display, # NEU
                         "Erw. Gewinn (%)": round(upside, 1), 
                         "Bewertung": status,
-                        "Letzter Q-Gewinn (Mio $)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
-                        "KGV (fwd)": round(info.get('forwardPE', 0), 1) if info.get('forwardPE', 0) else "N/A"
+                        "Q-Gewinn (Mio $)": round(last_q_profit, 2) if last_q_profit is not None else "N/A",
                     })
                     
-                    # News-Abruf (Stabilisiert)
+                    # News-Abruf
                     try:
                         ticker_news = stock.news
                         if ticker_news:
@@ -90,20 +95,18 @@ if st.sidebar.button("🔄 Kurse aktualisieren"):
         st.subheader("📊 Live-Marktübersicht")
         df_res = pd.DataFrame(results)
         
-        # Styling: Grün für Plus, Rot für Minus im Trend
+        # Styling
         def style_change(val):
             if isinstance(val, str) and "%" in val:
                 num = float(val.strip('%'))
-                if num > 0: return 'color: green'
-                if num < 0: return 'color: red'
+                return 'color: green' if num > 0 else 'color: red'
             return ''
             
         def highlight_valuation(val):
             return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
 
-        # Doppeltes Styling anwenden
         st.dataframe(df_res.style
-                     .applymap(style_change, subset=['Trend heute'])
+                     .applymap(style_change, subset=['Trend'])
                      .applymap(highlight_valuation, subset=['Bewertung']), 
                      use_container_width=True)
         
