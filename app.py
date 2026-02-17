@@ -19,14 +19,12 @@ def get_db_connection():
             if config_str:
                 config = json.loads(config_str)
                 cred = credentials.Certificate(config)
-                # Projekt-ID explizit aus der Config auslesen
                 project_id = config.get('project_id') or config.get('projectId')
                 firebase_admin.initialize_app(cred, {
                     'projectId': project_id,
                 })
                 return firestore.client(project=project_id)
             else:
-                # Lokale Entwicklung
                 firebase_admin.initialize_app()
                 return firestore.client()
         except Exception as e:
@@ -165,10 +163,10 @@ rsi_limit = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
 auto_refresh = st.sidebar.toggle("⏱️ Auto-Update", value=False)
 refresh_interval = st.sidebar.slider("Intervall (Sekunden)", 10, 300, 60)
 
-# --- 6. CORE SCANNER ---
+# --- 6. CORE SCANNER (Optimiert gegen Rate Limits) ---
 st.title("💎 Aktien-Radar Pro")
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600) # Längeres Caching gegen Rate Limits
 def fetch_stock_data_robust(symbols_tuple, rsi_max):
     results = []
     symbols = [s.strip().upper() for s in list(symbols_tuple) if s.strip()]
@@ -189,9 +187,16 @@ def fetch_stock_data_robust(symbols_tuple, rsi_max):
             rsi = 100 - (100 / (1 + (up.iloc[-1] / down.iloc[-1])))
             
             if rsi <= rsi_max:
+                # Wir versuchen info() abzurufen, aber mit Fehlerbehandlung
+                info = {}
                 try:
                     info = t.info
-                except:
+                    # Kurze Pause um Yahoo nicht zu überlasten
+                    time.sleep(0.2)
+                except Exception as e:
+                    # Wenn info() fehlschlägt (Rate Limit), nutzen wir h-Daten
+                    if "RateLimitError" in str(e):
+                        status_msg.warning(f"Rate Limit erreicht bei {sym}. Nutze Basisdaten.")
                     info = {}
                 
                 p = info.get('currentPrice') or h['Close'].iloc[-1]
@@ -230,7 +235,10 @@ def fetch_stock_data_robust(symbols_tuple, rsi_max):
                     "Netto-Schuld": net_debt,
                     "Rating": str(info.get('recommendationKey', '-')).replace('_', ' ').capitalize(),
                     "Potential %": round(potential, 1),
-                    "Bewertung": bewertung
+                    "Bewertung": bewertung,
+                    "Summary": info.get('longBusinessSummary', "N/A"),
+                    "ForwardPE": info.get('forwardPE', '-'),
+                    "EbitdaMarge": info.get('ebitdaMargins', 0)
                 })
         except: continue
         bar.progress((i + 1) / len(symbols))
@@ -249,9 +257,15 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
 # --- 7. ANZEIGE ---
 if st.session_state.scan_results:
     st.write(f"Zuletzt aktualisiert: **{st.session_state.last_update}**")
-    df = pd.DataFrame(st.session_state.scan_results)
+    df_all = pd.DataFrame(st.session_state.scan_results)
     
-    styled_df = df.style.applymap(color_metric, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-Wachst. %'])\
+    # Nur Spalten für die Haupttabelle anzeigen
+    display_cols = ["Name", "Symbol", "Kurs", "Bid", "Ask", "Heute %", "RSI", 
+                    "Umsatz-Wachst. %", "PEG", "FCF Yield %", "Netto-Schuld", 
+                    "Rating", "Potential %", "Bewertung"]
+    df_display = df_all[display_cols]
+    
+    styled_df = df_display.style.applymap(color_metric, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-Wachst. %'])\
                         .applymap(color_rsi, subset=['RSI'])\
                         .applymap(color_debt, subset=['Netto-Schuld'])\
                         .applymap(color_valuation, subset=['Bewertung'])\
@@ -268,10 +282,14 @@ if st.session_state.scan_results:
     selected = st.selectbox("Aktie für Detail-Analyse wählen:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
     active_sym = selected.split("(")[-1].replace(")", "")
     
-    if active_sym:
+    # Suche Daten aus dem Scan-Ergebnis um erneute API-Calls zu vermeiden
+    active_data = next((item for item in st.session_state.scan_results if item["Symbol"] == active_sym), None)
+    
+    if active_sym and active_data:
         st.subheader(f"Analyse: {selected}")
         c1, c2 = st.columns([2, 1])
         with c1:
+            # History laden wir neu für den Chart, das ist meist unkritisch (History != Info)
             hist_obj = yf.Ticker(active_sym)
             hist_d = hist_obj.history(period="1y")
             
@@ -300,11 +318,11 @@ if st.session_state.scan_results:
             fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            detail_i = yf.Ticker(active_sym).info
-            st.metric("Forward KGV", detail_i.get('forwardPE', '-'))
-            st.metric("EBITDA Marge", f"{detail_i.get('ebitdaMargins', 0)*100:.1f}%" if detail_i.get('ebitdaMargins') else "-")
+            # Wir nutzen die bereits im Scan geladenen Info-Daten
+            st.metric("Forward KGV", active_data.get('ForwardPE', '-'))
+            st.metric("EBITDA Marge", f"{active_data.get('EbitdaMarge', 0)*100:.1f}%" if active_data.get('EbitdaMarge') else "-")
             st.write("**Profil:**")
-            st.caption(detail_i.get('longBusinessSummary', "N/A")[:500] + "...")
+            st.caption(active_data.get('Summary', "N/A")[:600] + "...")
 
 # --- 8. RSS & WIKIFOLIO ---
 st.divider()
