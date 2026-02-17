@@ -15,14 +15,19 @@ except ImportError:
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
 st.title("💎 Aktien-Radar: Global (News & Experten)")
 
-# --- 1. DATENBANKEN (MANUELLE PFLEGE DER EXPERTEN-WERTE) ---
+# --- 1. DATENBANKEN (EXPERTE-WERTE & WIKIFOLIO LINKS) ---
 
-# 🟢 HGI PORTFOLIO (Stefan Waldhauser) - Hier die aktuellen Ticker anpassen
-HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT, DDOG" 
+# 🟢 STEFAN WALDHAUSER (HGI) - High-Tech Stock Picking
+# Ticker-Liste basierend auf seinem Fokus auf High-Growth & Cloud
+HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT, DDOG, TEAM, AMZN" 
+HGI_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf0stwtech"
 
-# 🔵 SZEW PORTFOLIO (Mateusz Szewczyk) - Hier die aktuellen Ticker anpassen
-SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW, SHOP"
+# 🔵 MATEUSZ SZEWCZYK (SZEW) - Data Driven Tech
+# Ticker-Liste basierend auf seinem Fokus auf datengetriebene Tech-Werte
+SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW, SHOP, MELI, GNS"
+SZEW_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf00szew01"
 
+# Standard-Listen
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
 US_TECH_LISTE = "865985, 870747, 906866, A1CX3T, 918422, A14Y6F, A1JWVX, 552484, A14R7U, A1J5X3, A2QP7J, 851399"
 GLOBAL_TOP_LISTE = "865985, 870747, 918422, 716460, 723610, 840400, 850663, 856958, A0M240, 850517"
@@ -98,16 +103,17 @@ ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", key
 
 st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
-auto_refresh = st.sidebar.toggle("⏱️ Live-Modus", value=False)
+auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=False)
 
 st.sidebar.divider()
 st.sidebar.header("4. Experten-Portfolios")
-st.sidebar.caption("Lade die Top-Werte der Experten:")
+st.sidebar.caption("Lade die Portfolios der Experten in den Scanner:")
 
+# Buttons mit Callbacks für stabiles Laden
 st.sidebar.button("📥 HGI Portfolio laden", on_click=load_list, args=(HGI_PORTFOLIO,))
 st.sidebar.button("📥 Szew Portfolio laden", on_click=load_list, args=(SZEW_PORTFOLIO,))
 
-show_experts = st.sidebar.checkbox("🧠 Experten-News anzeigen", value=True)
+show_experts = st.sidebar.checkbox("🧠 Experten-Briefing anzeigen", value=True)
 
 # --- 3. HAUPTPROGRAMM ---
 
@@ -294,22 +300,21 @@ if st.session_state.scan_results:
     # --- EXPERTEN (Substack & Wiki Buttons) ---
     if show_experts:
         st.divider()
-        st.subheader("🧠 Experten-Briefing")
+        st.subheader("🧠 Experten-Briefing (Wikifolio & Substack)")
         col1, col2 = st.columns(2)
         with col1:
             st.info("📊 **Stefan Waldhauser (HGI)**")
             c1, c2 = st.columns(2)
-            c1.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf0stwtech")
+            c1.link_button("📈 Zum Wikifolio (Trades)", HGI_WIKI_URL)
             c2.link_button("📝 Zum Blog", "https://high-tech-investing.de")
             wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
             if wh_news:
                 for item in wh_news: st.markdown(f"• [{item['title']}]({item['link']})")
 
         with col2:
-            st.info("🐻 **Szew (Mateusz Szewczyk)**")
+            st.info("🐻 **Mateusz Szewczyk (Szew)**")
             c3, c4 = st.columns(2)
-            # AKTUALISIERTER LINK
-            c3.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00szew01")
+            c3.link_button("📈 Zum Wikifolio (Trades)", SZEW_WIKI_URL)
             c4.link_button("📝 Zum Substack", "https://szew.substack.com")
             sz_news = get_rss_feed("https://szew.substack.com/feed")
             if sz_news:
