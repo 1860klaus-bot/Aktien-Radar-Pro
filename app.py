@@ -5,17 +5,17 @@ import time
 import urllib.parse
 from datetime import datetime
 
-# --- 0. SICHERHEITS-CHECK FÜR MODULE ---
+# --- 0. SICHERHEITS-CHECK ---
 try:
     import feedparser
 except ImportError:
-    st.error("⚠️ ACHTUNG: Das Modul 'feedparser' fehlt! Bitte füge in deine `requirements.txt` auf GitHub das Wort `feedparser` hinzu.")
-    st.stop() # Stoppt die App hier, damit nichts abstürzt
+    st.error("⚠️ Modul 'feedparser' fehlt! Bitte in `requirements.txt` ergänzen.")
+    st.stop()
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
 st.title("💎 Aktien-Radar: Global (News & Experten)")
 
-# --- 1. KONFIGURATION (LISTEN) ---
+# --- 1. DATENBANKEN ---
 HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT, DDOG" 
 SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW, SHOP"
 
@@ -66,26 +66,32 @@ def get_rss_feed(rss_url):
         return news_items
     except: return []
 
+# WICHTIG: Callback-Funktion für sicheres Laden der Listen
+def load_list(ticker_string):
+    st.session_state.ticker_text = ticker_string
+
 # --- 2. SEITENLEISTE ---
 st.sidebar.header("1. Listen laden")
 
-# Session State initialisieren (WICHTIG!)
-if 'ticker_text' not in st.session_state:
-    st.session_state['ticker_text'] = FAVORITEN_LISTE
-if 'scan_results' not in st.session_state: st.session_state['scan_results'] = None
-if 'scan_news' not in st.session_state: st.session_state['scan_news'] = {}
-if 'last_update' not in st.session_state: st.session_state['last_update'] = None
+if 'ticker_text' not in st.session_state: st.session_state.ticker_text = FAVORITEN_LISTE
+if 'scan_results' not in st.session_state: st.session_state.scan_results = None
+if 'scan_news' not in st.session_state: st.session_state.scan_news = {}
+if 'last_update' not in st.session_state: st.session_state.last_update = None
 
-# Buttons - Aktualisieren das Textfeld sofort
+# Buttons mit Callback (on_click) - Das verhindert den Fehler!
 col1, col2 = st.sidebar.columns(2)
-if col1.button("🇩🇪 DAX Liste"): st.session_state['ticker_text'] = DAX_LISTE
-if col2.button("🇺🇸 US Tech"): st.session_state['ticker_text'] = US_TECH_LISTE
+with col1:
+    st.button("🇩🇪 DAX Liste", on_click=load_list, args=(DAX_LISTE,))
+with col2:
+    st.button("🇺🇸 US Tech", on_click=load_list, args=(US_TECH_LISTE,))
 
 col3, col4 = st.sidebar.columns(2)
-if col3.button("🌍 Global"): st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
-if col4.button("⭐ Favoriten"): st.session_state['ticker_text'] = FAVORITEN_LISTE
+with col3:
+    st.button("🌍 Global", on_click=load_list, args=(GLOBAL_TOP_LISTE,))
+with col4:
+    st.button("⭐ Favoriten", on_click=load_list, args=(FAVORITEN_LISTE,))
 
-# Textfeld - Verknüpft mit Session State
+# Textfeld
 ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", key="ticker_text", height=150)
 
 st.sidebar.header("3. Steuerung")
@@ -95,12 +101,11 @@ auto_refresh = st.sidebar.toggle("⏱️ Live-Modus", value=False)
 # EXPERTEN SEKTION
 st.sidebar.divider()
 st.sidebar.header("4. Experten-Portfolios")
-if st.sidebar.button("📥 HGI Portfolio laden"):
-    st.session_state['ticker_text'] = HGI_PORTFOLIO
-    st.rerun()
-if st.sidebar.button("📥 Szew Portfolio laden"):
-    st.session_state['ticker_text'] = SZEW_PORTFOLIO
-    st.rerun()
+st.sidebar.caption("Lade die Top-Werte der Experten:")
+
+# Diese Buttons waren der Fehler - jetzt mit on_click sicher!
+st.sidebar.button("📥 HGI Portfolio laden", on_click=load_list, args=(HGI_PORTFOLIO,))
+st.sidebar.button("📥 Szew Portfolio laden", on_click=load_list, args=(SZEW_PORTFOLIO,))
 
 show_experts = st.sidebar.checkbox("🧠 Experten-News anzeigen", value=True)
 
@@ -213,15 +218,15 @@ if should_scan:
         status_text.empty()
         progress_bar.empty()
     
-    st.session_state['scan_results'] = temp_results
-    st.session_state['scan_news'] = temp_news
-    st.session_state['last_update'] = datetime.now().strftime("%H:%M:%S")
+    st.session_state.scan_results = temp_results
+    st.session_state.scan_news = temp_news
+    st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
 
 # B) ANZEIGE
-if st.session_state['scan_results']:
-    results = st.session_state['scan_results']
-    news_data = st.session_state['scan_news']
-    last_up = st.session_state['last_update']
+if st.session_state.scan_results:
+    results = st.session_state.scan_results
+    news_data = st.session_state.scan_news
+    last_up = st.session_state.last_update
     
     if auto_refresh: st.markdown(f"🟢 **Live-Modus aktiv** | Zuletzt aktualisiert: **{last_up}**")
     else: st.markdown(f"⚪ Manueller Modus | Stand: **{last_up}**")
@@ -302,19 +307,22 @@ if st.session_state['scan_results']:
     if show_experts:
         st.divider()
         st.subheader("🧠 Experten-Briefing")
+        
         col1, col2 = st.columns(2)
         with col1:
             st.info("📊 **Stefan Waldhauser (HGI)**")
-            st.markdown("[👉 Zum Wikifolio (Web)](https://www.wikifolio.com/de/de/w/wf00000hgi)")
-            st.markdown("[👉 Zum Blog](https://high-tech-investing.de)")
+            c1, c2 = st.columns(2)
+            c1.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00000hgi")
+            c2.link_button("📝 Zum Blog", "https://high-tech-investing.de")
             wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
             if wh_news:
                 for item in wh_news: st.markdown(f"• [{item['title']}]({item['link']})")
 
         with col2:
             st.info("🐻 **Szew (Mateusz Szewczyk)**")
-            st.markdown("[👉 Zum Wikifolio (Web)](https://www.wikifolio.com/de/de/w/wf000szew1)")
-            st.markdown("[👉 Zum Substack](https://szew.substack.com)")
+            c3, c4 = st.columns(2)
+            c3.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf000szew1")
+            c4.link_button("📝 Zum Substack", "https://szew.substack.com")
             sz_news = get_rss_feed("https://szew.substack.com/feed")
             if sz_news:
                 for item in sz_news: st.markdown(f"• [{item['title']}]({item['link']})")
