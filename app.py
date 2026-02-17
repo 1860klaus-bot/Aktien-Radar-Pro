@@ -23,6 +23,7 @@ def get_db_connection():
                 firebase_admin.initialize_app(cred, {'projectId': project_id})
                 return firestore.client(project=project_id)
             else:
+                # Lokale Entwicklung
                 firebase_admin.initialize_app()
                 return firestore.client()
         except Exception as e:
@@ -64,7 +65,7 @@ def load_favorites_from_db():
 # --- 3. DATEN-LISTEN (BÖRSEN & INDIZES) ---
 # DEUTSCHLAND
 DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE, BEI.DE, CON.DE, CBK.DE, DBK.DE, RWE.DE, AIR.DE, P911.DE, SY1.DE, SRT3.DE, MRK.DE, HEI.DE, MTX.DE, HEN3.DE, EON.DE, VNA.DE"
-MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, JUN3.DE, GXI.DE, TAG.DE, WCH.DE, NEM.DE, AIXA.DE, FRA.DE, JEN.DE, LPK.DE, RTL.DE, GFG.DE, BC8.DE"
+MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, HEI.DE, JUN3.DE, GXI.DE, TAG.DE, WCH.DE, NEM.DE, AIXA.DE, FRA.DE, JEN.DE, LPK.DE, RTL.DE, GFG.DE, BC8.DE"
 SDAX_LISTE = "SDF.DE, GFG.DE, BC8.DE, MOR.DE, ADV.DE, HDD.DE, HHFA.DE, EUZ.DE, BYW6.DE, S92.DE, JEN.DE, AT1.DE, 1COV.DE"
 TECDAX_LISTE = "SAP.DE, IFX.DE, DTE.DE, AFX.DE, AIXA.DE, JEN.DE, NEM.DE, O2D.DE, MOR.DE, SRT3.DE, ADV.DE, EVT.DE, VAR1.DE"
 
@@ -156,6 +157,9 @@ st.session_state.ticker_input = ticker_text
 if st.sidebar.button("💾 Liste dauerhaft speichern", use_container_width=True, type="primary"):
     save_favorites_to_db(ticker_text)
 
+# DER WIEDEREINGEFÜGTE LINK
+st.sidebar.link_button("🔍 aktien.guide öffnen", "https://aktien.guide", use_container_width=True)
+
 st.sidebar.divider()
 rsi_limit = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
 auto_refresh = st.sidebar.toggle("⏱️ Auto-Update", value=False)
@@ -206,6 +210,7 @@ def fetch_stock_data_robust(symbols_tuple, rsi_max, force_key=0):
                 target = info.get('targetMeanPrice')
                 potential = ((target - p) / p * 100) if target else 0
                 
+                # Bewertung Logik
                 bewertung = "Neutral"
                 if isinstance(peg, (int, float)):
                     if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
@@ -268,7 +273,7 @@ if st.session_state.scan_results:
     st.divider()
     
     # DETAIL ANALYSE
-    selected = st.selectbox("Aktie für Detail-Analyse:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
+    selected = st.selectbox("Aktie für Detail-Analyse wählen:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
     active_sym = selected.split("(")[-1].replace(")", "")
     active_data = next((item for item in st.session_state.scan_results if item["Symbol"] == active_sym), None)
     
