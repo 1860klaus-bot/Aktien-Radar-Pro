@@ -19,17 +19,14 @@ st.title("💎 Aktien-Radar: Global (News & Experten)")
 # --- 1. DATENBANKEN (WIKIFOLIO WERTE & LINKS) ---
 
 # 🟢 STEFAN WALDHAUSER (HGI) - High-Tech Stock Picking
-# Die 15 Werte exakt aus deiner Liste
 HGI_PORTFOLIO = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP" 
 HGI_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf0stwtech"
 HGI_SUBSTACK_URL = "https://hightechinvesting.substack.com"
 HGI_RSS_FEED = "https://hightechinvesting.substack.com/feed"
 
 # 🔵 SIMON WEISHAR (SZEW) - Szew Grundinvestment
-# Aktuelle Top-Holdings (Szew Grundinvestment / Data Driven)
 SZEW_PORTFOLIO = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
 SZEW_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf00szew01"
-# Aktualisierter Link zum Substack-Profil
 SZEW_SUBSTACK_URL = "https://substack.com/@szew"
 SZEW_RSS_FEED = "https://szew.substack.com/feed"
 
@@ -240,7 +237,7 @@ if st.session_state.scan_results:
                     use_container_width=True)
     
     st.divider()
-    st.subheader("📉 Profi-Chart")
+    st.subheader("📉 Profi-Chart (inkl. Bollinger Bänder)")
     ticker_list = [f"{r['Name']} ({r['Kürzel']})" for r in results]
     selected_option = st.selectbox("Aktie auswählen:", ticker_list, key="chart_select")
     selected_ticker = selected_option.split("(")[-1].replace(")", "")
@@ -249,9 +246,18 @@ if st.session_state.scan_results:
         chart_stock = yf.Ticker(selected_ticker)
         chart_df = chart_stock.history(period="2y")
         if not chart_df.empty:
+            # Berechnung Bollinger Bänder
+            chart_df['SMA 20'] = chart_df['Close'].rolling(window=20).mean()
+            chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
+            chart_df['Oberes Band'] = chart_df['SMA 20'] + (chart_df['Std_Dev'] * 2)
+            chart_df['Unteres Band'] = chart_df['SMA 20'] - (chart_df['Std_Dev'] * 2)
+            
+            # Bestehende SMAs
             chart_df['SMA 200'] = chart_df['Close'].rolling(window=200).mean()
             chart_df['SMA 50'] = chart_df['Close'].rolling(window=50).mean()
-            st.line_chart(chart_df.iloc[-250:][['Close', 'SMA 200', 'SMA 50']])
+            
+            # Chart zeichnen
+            st.line_chart(chart_df.iloc[-250:][['Close', 'Oberes Band', 'Unteres Band', 'SMA 20', 'SMA 50', 'SMA 200']])
 
     if show_experts:
         st.divider()
