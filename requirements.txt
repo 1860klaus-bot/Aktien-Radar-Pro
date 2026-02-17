@@ -3,3 +3,4 @@ yfinance
 pandas
 jinja2
 feedparser
+plotly
