@@ -9,67 +9,75 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. FIREBASE INITIALISIERUNG (Optimiert & Robust) ---
+# --- 1. FIREBASE INITIALISIERUNG (Maximale Stabilität) ---
 @st.cache_resource
 def get_db_connection():
-    """Initialisiert die Firebase-Verbindung mit verbesserter Fehlerdiagnose."""
+    """Initialisiert die Firebase-Verbindung mit expliziter Projekt-ID Zuweisung."""
     if not firebase_admin._apps:
         try:
             config = None
-            # 1. Versuch: Gemini Canvas Umgebungsvariablen
+            # Versuche Konfiguration aus Globals zu lesen (Canvas Umgebung)
             if "__firebase_config" in globals():
-                config = json.loads(globals()["__firebase_config"])
-            # 2. Versuch: Streamlit Secrets (für externes Hosting)
-            elif "firebase" in st.secrets:
-                config = dict(st.secrets["firebase"])
+                raw_config = globals()["__firebase_config"]
+                config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
             
             if config:
+                # Projekt-ID ist kritisch für Firestore
                 project_id = config.get('project_id') or config.get('projectId')
-                cred = credentials.Certificate(config)
+                if not project_id:
+                    st.sidebar.error("❌ Kritischer Fehler: Projekt-ID fehlt in Config.")
+                    return None
                 
-                # App initialisieren
-                if project_id:
-                    firebase_admin.initialize_app(cred, {'projectId': project_id})
-                    return firestore.client(project=project_id)
-                else:
-                    firebase_admin.initialize_app(cred)
-                    return firestore.client()
+                cred = credentials.Certificate(config)
+                # App mit expliziter Projekt-ID initialisieren
+                firebase_admin.initialize_app(cred, {
+                    'projectId': project_id,
+                    'databaseURL': f"https://{project_id}.firebaseio.com"
+                })
+                # Client explizit mit Projekt-ID anfordern
+                return firestore.client(project=project_id)
             else:
-                # Keine Konfiguration gefunden
-                st.sidebar.warning("⚠️ Keine Firebase-Konfiguration gefunden. Cloud-Speicher deaktiviert.")
+                st.sidebar.warning("⚠️ Keine Cloud-Konfiguration gefunden.")
                 return None
         except Exception as e:
-            st.sidebar.error(f"❌ Datenbank-Fehler: {str(e)}")
+            st.sidebar.error(f"❌ Datenbank-Verbindungsfehler: {str(e)}")
             return None
     else:
-        # App ist bereits initialisiert, Client zurückgeben
+        # Falls App schon initialisiert, Client erneut sicher abrufen
         try:
+            config = None
+            if "__firebase_config" in globals():
+                raw_config = globals()["__firebase_config"]
+                config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
+            
+            if config:
+                pid = config.get('project_id') or config.get('projectId')
+                return firestore.client(project=pid)
             return firestore.client()
         except:
             return None
 
-# Globale Variablen initialisieren
+# Globale Variablen für DB und Identifikation
 db = get_db_connection()
 app_id = globals().get("__app_id", "default-app-id")
-user_id = "default_user"
+user_id = "default_user" 
 
 # --- 2. PERSISTENZ-FUNKTIONEN ---
 def save_favorites_to_db(ticker_string):
     """Speichert die Favoriten-Liste dauerhaft in der Cloud."""
     if not db: 
-        st.sidebar.error("Cloud-Speicher nicht verfügbar. Bitte Seite neu laden oder Verbindung prüfen.")
+        st.sidebar.error("Cloud-Speicher nicht verfügbar. (Client fehlt)")
         return
     try:
         # Pfad gemäß Regel 1: /artifacts/{appId}/users/{userId}/{collectionName}
-        # Wir nutzen 'settings' als Collection und 'favorites' als Dokument
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc_ref.set({
             "list": ticker_string,
             "updated_at": datetime.now()
-        })
-        st.sidebar.success("✅ Favoriten erfolgreich gespeichert!")
+        }, merge=True)
+        st.sidebar.success("✅ Liste in Cloud gespeichert!")
     except Exception as e:
-        st.sidebar.error(f"Fehler beim Speichern: {e}")
+        st.sidebar.error(f"Fehler beim Schreiben: {str(e)}")
 
 def load_favorites_from_db():
     """Lädt die Favoriten-Liste beim App-Start."""
@@ -135,10 +143,11 @@ def format_curr(val):
 # --- 5. SIDEBAR ---
 st.sidebar.header("⚙️ Menü")
 
+# Status-Anzeige
 if db:
-    st.sidebar.caption("🟢 Cloud-Speicher verbunden")
+    st.sidebar.success("🟢 Cloud-Speicher verbunden")
 else:
-    st.sidebar.caption("🔴 Cloud-Speicher offline")
+    st.sidebar.error("🔴 Cloud-Speicher offline")
 
 with st.sidebar.expander("📊 Indizes laden", expanded=False):
     if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
@@ -150,25 +159,25 @@ with st.sidebar.expander("🧠 Experten & Favoriten", expanded=True):
     if col1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
     if col2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
     if st.button("🌍 Global Top laden", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
-    if st.button("📂 Cloud-Favoriten laden", use_container_width=True):
+    if st.button("📂 Cloud-Favoriten laden", help="Holt deine gespeicherte Liste aus der DB", use_container_width=True):
         st.session_state.ticker_input = load_favorites_from_db()
         st.rerun()
-    if st.button("⭐ Standard Favoriten", use_container_width=True): st.session_state.ticker_input = FAVORITEN_INIT
+    if st.button("⭐ Reset auf Standard", use_container_width=True): st.session_state.ticker_input = FAVORITEN_INIT
 
 st.sidebar.divider()
-ticker_text = st.sidebar.text_area("⭐ Meine Favoriten:", value=st.session_state.ticker_input, height=120)
+ticker_text = st.sidebar.text_area("⭐ Meine Ticker-Liste:", value=st.session_state.ticker_input, height=120)
 st.session_state.ticker_input = ticker_text
 
-if st.sidebar.button("💾 Liste dauerhaft speichern", use_container_width=True):
+if st.sidebar.button("💾 Liste dauerhaft speichern", help="Speichert diese Liste in deinem Cloud-Profil", use_container_width=True):
     save_favorites_to_db(ticker_text)
 
 st.sidebar.divider()
 st.sidebar.link_button("🔍 aktien.guide öffnen", "https://aktien.guide", use_container_width=True)
 
 st.sidebar.divider()
-rsi_max = st.sidebar.slider("RSI-Filter", 10, 100, 85)
+rsi_max = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
 auto_refresh = st.sidebar.toggle("⏱️ Auto-Update", value=False)
-interval = st.sidebar.slider("Intervall (Sek)", 10, 300, 60)
+interval = st.sidebar.slider("Intervall (Sekunden)", 10, 300, 60)
 
 # --- 6. SCANNER ---
 @st.cache_data(ttl=300)
@@ -179,7 +188,7 @@ def scan_tickers(symbols_tuple, rsi_limit):
     progress = st.progress(0)
     
     for i, sym in enumerate(symbols):
-        status.text(f"Scanne {sym}... ({i+1}/{len(symbols)})")
+        status.text(f"Analysiere {sym}... ({i+1}/{len(symbols)})")
         try:
             t = yf.Ticker(sym)
             h = t.history(period="60d")
@@ -269,7 +278,7 @@ if st.session_state.get('scan_results'):
             st.metric("Forward KGV", i.get('forwardPE', '-'))
             st.metric("EBITDA Marge", f"{i.get('ebitdaMargins', 0)*100:.1f}%")
             st.write("**Profil:**")
-            st.caption(i.get('longBusinessSummary', "Keine Beschreibung verfügbar.")[:500] + "...")
+            st.caption(i.get('longBusinessSummary', "N/A")[:500] + "...")
 
 # --- 8. EXPERTEN FEEDS ---
 st.divider()
