@@ -25,6 +25,7 @@ def get_db_connection():
                 })
                 return firestore.client(project=project_id)
             else:
+                # Lokale Fallback-Initialisierung
                 firebase_admin.initialize_app()
                 return firestore.client()
         except Exception as e:
@@ -105,6 +106,12 @@ def color_debt(val):
     except: pass
     return ''
 
+def color_valuation(val):
+    if val == "Unterbewertet": return 'background-color: #006400; color: white'
+    if val == "Günstig": return 'background-color: #90EE90; color: black'
+    if val == "Überbewertet": return 'background-color: #8B0000; color: white'
+    return ''
+
 def format_curr(val):
     if val is None or pd.isna(val): return "-"
     if abs(val) >= 1e9: return f"{val/1e9:.2f} Mrd"
@@ -117,7 +124,7 @@ st.sidebar.header("⚙️ Menü")
 with st.sidebar.expander("📊 Indizes laden", expanded=False):
     if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
     if st.button("MDAX", use_container_width=True): st.session_state.ticker_input = MDAX_LISTE
-    if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_LISTE
+    if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_100
 
 with st.sidebar.expander("🧠 Experten", expanded=True):
     col1, col2 = st.columns(2)
@@ -179,6 +186,18 @@ def scan_tickers(symbols_tuple, rsi_limit):
                 debt = info.get('totalDebt')
                 net_debt = (debt - cash) if (debt is not None and cash is not None) else info.get('netDebt')
                 
+                target = info.get('targetMeanPrice')
+                potential = ((target - p) / p * 100) if target else 0
+                
+                # Bewertung Logik
+                bewertung = "Neutral"
+                if isinstance(peg, (int, float)):
+                    if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
+                    elif (peg < 1.5 or fcf_y > 5) and rsi < 45: bewertung = "Günstig"
+                    elif peg > 2.2 or rsi > 75: bewertung = "Überbewertet"
+                elif potential > 30 and rsi < 40:
+                    bewertung = "Unterbewertet"
+                
                 results.append({
                     "Name": info.get('shortName', sym),
                     "Symbol": sym,
@@ -192,7 +211,8 @@ def scan_tickers(symbols_tuple, rsi_limit):
                     "FCF Yield %": round(fcf_y, 1),
                     "Netto-Schuld": net_debt,
                     "Rating": info.get('recommendationKey', '-').replace('_',' ').capitalize(),
-                    "Potential %": round(((info.get('targetMeanPrice', p)-p)/p*100), 1) if info.get('targetMeanPrice') else 0
+                    "Potential %": round(potential, 1),
+                    "Bewertung": bewertung
                 })
         except: continue
         progress.progress((i + 1) / len(symbols))
@@ -215,6 +235,7 @@ if st.session_state.scan_results:
         df.style.applymap(color_metric, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-W. %'])
         .applymap(color_rsi, subset=['RSI'])
         .applymap(color_debt, subset=['Netto-Schuld'])
+        .applymap(color_valuation, subset=['Bewertung'])
         .format({
             "Heute %": "{:+.2f}%", "Potential %": "{:+.1f}%", "Umsatz-W. %": "{:+.1f}%", "FCF Yield %": "{:.1f}%",
             "Netto-Schuld": lambda x: format_curr(x)
