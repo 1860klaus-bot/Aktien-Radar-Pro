@@ -7,7 +7,7 @@ import urllib.parse
 from datetime import datetime
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (Charts, News & Experten)")
+st.title("💎 Aktien-Radar: Global (News & Experten)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -51,13 +51,14 @@ def get_google_news(query_term):
         return news_items
     except: return []
 
-def get_waldhauser_feed():
-    """Holt den echten RSS Feed von High-Tech-Investing"""
+def get_rss_feed(rss_url):
+    """Holt Nachrichten von Substack/Blogs via RSS"""
     try:
-        feed = feedparser.parse("https://high-tech-investing.de/feed/")
+        feed = feedparser.parse(rss_url)
         news_items = []
         for entry in feed.entries[:5]:
-            news_items.append({'title': entry.title, 'link': entry.link, 'published': entry.published[:16]})
+            pub_date = entry.published[:16] if hasattr(entry, 'published') else ""
+            news_items.append({'title': entry.title, 'link': entry.link, 'published': pub_date})
         return news_items
     except: return []
 
@@ -90,8 +91,8 @@ rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=False)
 
 # EXPERTEN SEKTION
-st.sidebar.header("4. Experten & Wikifolios")
-show_experts = st.sidebar.checkbox("🧠 Experten-Analysen anzeigen", value=True)
+st.sidebar.header("4. Experten-Radar")
+show_experts = st.sidebar.checkbox("🧠 Experten (Substack & Wiki)", value=True)
 
 # --- 3. HAUPTPROGRAMM ---
 
@@ -287,18 +288,27 @@ if st.session_state['scan_results']:
             rsi_plot['30'] = 30
             st.line_chart(rsi_plot[['RSI', '70', '30']], color=["#0000FF", "#FF0000", "#00FF00"])
 
-    # --- EXPERTEN SECTION (NEU) ---
+    # --- EXPERTEN SECTION (SUBSTACK & WIKI) ---
     if show_experts:
         st.divider()
-        st.subheader("🧠 Experten-Analysen & Wikifolios")
+        st.subheader("🧠 Experten-Briefing (Substack & Wikifolio)")
         
         col1, col2 = st.columns(2)
         
         with col1:
             st.info("📊 **Stefan Waldhauser (HGI)**")
-            st.markdown("[👉 Zur aktuellen Kaufliste (Wikifolio)](https://www.wikifolio.com/de/de/w/wf00000hgi)")
-            st.write("**Neueste Blog-Artikel:**")
-            wh_news = get_waldhauser_feed() # Echter Blog Feed
+            st.markdown("High-Growth-Investing Strategie")
+            
+            # Buttons für Direktzugriff
+            c1, c2 = st.columns(2)
+            with c1:
+                st.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00000hgi")
+            with c2:
+                st.link_button("📝 Zum Blog/Substack", "https://high-tech-investing.de")
+
+            st.write("**Neueste Artikel (RSS):**")
+            # Feed von High-Tech-Investing
+            wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
             if wh_news:
                 for item in wh_news:
                     st.markdown(f"• [{item['title']}]({item['link']})")
@@ -306,16 +316,25 @@ if st.session_state['scan_results']:
                 st.caption("Keine neuen Artikel geladen.")
 
         with col2:
-            st.info("🐻 **Szew (Mateusz Szewczyk)**")
-            st.markdown("[👉 Zur aktuellen Kaufliste (Wikifolio)](https://www.wikifolio.com/de/de/p/szewczyk)")
-            st.write("**Aktuelles im Netz:**")
-            # Für Szew nutzen wir Google News, da er keinen einfachen RSS hat
-            sz_news = get_google_news("Mateusz Szewczyk")
+            st.info("🐻 **Mateusz Szewczyk (Szew)**")
+            st.markdown("Data-Driven Tech Investing")
+            
+            # Buttons
+            c3, c4 = st.columns(2)
+            with c3:
+                # Link zum Haupt-Wikifolio "Data Driven Tech"
+                st.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf000szew1")
+            with c4:
+                st.link_button("📝 Zum Substack", "https://szew.substack.com")
+
+            st.write("**Neueste Substack-Artikel:**")
+            # Feed von Szew Substack
+            sz_news = get_rss_feed("https://szew.substack.com/feed")
             if sz_news:
                 for item in sz_news:
                     st.markdown(f"• [{item['title']}]({item['link']})")
             else:
-                st.caption("Keine aktuellen Nachrichten gefunden.")
+                st.caption("Keine Artikel geladen.")
 
     # --- AKTIEN NEWS ---
     st.divider()
@@ -328,7 +347,7 @@ if st.session_state['scan_results']:
                 st.markdown(f"• **[{item['title']}]({item['link']})**")
                 st.caption(f"{item['publisher']} | {pub_date}")
         else:
-            st.info(f"Keine Google News. [Suche starten](https://www.google.com/search?q={selected_ticker}+Aktie&tbm=nws)")
+            st.info(f"Keine Google News gefunden. [Suche starten](https://www.google.com/search?q={selected_ticker}+Aktie&tbm=nws)")
 
 if auto_refresh:
     time.sleep(60)
