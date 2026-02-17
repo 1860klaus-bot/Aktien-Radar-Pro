@@ -45,33 +45,51 @@ def get_rss_news(url):
 def load_list_callback(text):
     st.session_state.ticker_input = text
 
+def format_currency(val):
+    if val is None or pd.isna(val): return "-"
+    abs_val = abs(val)
+    suffix = ""
+    if abs_val >= 1_000_000_000:
+        res = val / 1_000_000_000
+        suffix = " Mrd"
+    elif abs_val >= 1_000_000:
+        res = val / 1_000_000
+        suffix = " Mio"
+    else:
+        res = val
+    return f"{res:.2f}{suffix}"
+
 def color_negative_red_positive_green(val):
-    """Farbe für Trends und Wachstum"""
     try:
         if isinstance(val, str):
+            if 'Mrd' in val or 'Mio' in val: return ''
             val = float(val.replace('%', '').replace('+', ''))
         color = 'green' if val > 0 else 'red' if val < 0 else 'white'
         return f'color: {color}'
     except:
         return ''
 
+def color_net_debt(val):
+    try:
+        if val is None or pd.isna(val): return ''
+        if val < 0: return 'background-color: #d4edda; color: #155724'
+        if val > 0: return 'background-color: #f8d7da; color: #721c24'
+    except: pass
+    return ''
+
 def color_rsi(val):
-    """RSI Farbskala"""
     try:
         color = 'lightgreen' if val <= 35 else 'tomato' if val >= 70 else 'white'
         return f'background-color: {color}; color: black' if color != 'white' else ''
-    except:
-        return ''
+    except: return ''
 
 def color_valuation(val):
-    """Farbliche Markierung der Bewertung"""
     if val == "Unterbewertet": return 'background-color: #006400; color: white'
     if val == "Günstig": return 'background-color: #90EE90; color: black'
     if val == "Überbewertet": return 'background-color: #8B0000; color: white'
     return ''
 
 def color_rating(val):
-    """Farbliche Markierung des Analysten-Ratings"""
     rating_colors = {
         "Starker Kauf": 'background-color: #004d00; color: white',
         "Kauf": 'background-color: #008000; color: white',
@@ -133,32 +151,30 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
                     prev_c = info.get('previousClose', price)
                     day_change = ((price - prev_c) / prev_c) * 100
                     
+                    # Zukunftsaussichten & Fundamentals
+                    f_pe = info.get('forwardPE', '-')
                     rev_growth = info.get('revenueGrowth', 0)
-                    earn_growth = info.get('earningsGrowth', 0)
-                    peg = info.get('pegRatio')
+                    total_cash = info.get('totalCash')
+                    total_debt = info.get('totalDebt')
+                    net_debt = (total_debt - total_cash) if (total_debt is not None and total_cash is not None) else info.get('netDebt')
+                    
+                    fcf = info.get('freeCashflow')
+                    m_cap = info.get('marketCap')
+                    fcf_yield = (fcf / m_cap) * 100 if fcf and m_cap else 0
+                    
+                    peg = info.get('pegRatio') or info.get('trailingPegRatio') or info.get('priceToEarningsGrowth')
                     target = info.get('targetMeanPrice')
                     potential = ((target - price) / price) * 100 if target else 0
                     
-                    # Analysten-Rating mapping
                     raw_rating = info.get('recommendationKey', '-')
-                    rating_map = {
-                        'strong_buy': 'Starker Kauf',
-                        'buy': 'Kauf',
-                        'hold': 'Halten',
-                        'underperform': 'Verkauf',
-                        'sell': 'Starker Verkauf'
-                    }
+                    rating_map = {'strong_buy': 'Starker Kauf', 'buy': 'Kauf', 'hold': 'Halten', 'underperform': 'Verkauf', 'sell': 'Starker Verkauf'}
                     display_rating = rating_map.get(raw_rating, raw_rating.capitalize())
-                    num_analysts = info.get('numberOfAnalystOpinions', 0)
                     
-                    # Logik für Bewertung
                     bewertung = "Neutral"
-                    if peg:
+                    if peg and isinstance(peg, (int, float)):
                         if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
-                        elif peg < 1.5 and rsi_val < 40: bewertung = "Günstig"
-                        elif peg > 2.5 or rsi_val > 75: bewertung = "Überbewertet"
-                    elif potential > 30 and rsi_val < 45: 
-                        bewertung = "Unterbewertet"
+                        elif (peg < 1.5 or fcf_yield > 5) and rsi_val < 45: bewertung = "Günstig"
+                        elif peg > 2.2 or rsi_val > 75: bewertung = "Überbewertet"
                     
                     scan_results.append({
                         "Name": info.get('shortName', sym),
@@ -167,11 +183,12 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
                         "Heute %": round(day_change, 2),
                         "RSI": round(rsi_val, 1),
                         "Umsatz-Wachst. %": round(rev_growth * 100, 1) if rev_growth else 0,
-                        "Gewinn-Wachst. %": round(earn_growth * 100, 1) if earn_growth else 0,
-                        "PEG": round(peg, 2) if peg else "-",
+                        "Forward KGV": f_pe,
+                        "Netto-Schulden": net_debt,
+                        "FCF Yield %": round(fcf_yield, 1),
+                        "PEG": round(peg, 2) if peg is not None and isinstance(peg, (int,float)) else "-",
                         "Potential %": round(potential, 1) if target else 0,
-                        "Analysten-Rating": display_rating,
-                        "Analysten #": num_analysts,
+                        "Rating": display_rating,
                         "Bewertung": bewertung
                     })
         except: pass
@@ -185,52 +202,55 @@ if st.session_state.scan_results:
     st.caption(f"Letztes Update: {st.session_state.get('last_update', 'Gerade eben')}")
     df_results = pd.DataFrame(st.session_state.scan_results)
     
-    # Styling der Tabelle
     styled_df = df_results.style.applymap(
         color_negative_red_positive_green, 
-        subset=['Heute %', 'Umsatz-Wachst. %', 'Gewinn-Wachst. %', 'Potential %']
-    ).applymap(
-        color_rsi, 
-        subset=['RSI']
-    ).applymap(
-        color_valuation, 
-        subset=['Bewertung']
-    ).applymap(
-        color_rating, 
-        subset=['Analysten-Rating']
-    ).format({
-        "Heute %": "{:+.2f}%",
-        "Umsatz-Wachst. %": "{:+.1f}%",
-        "Gewinn-Wachst. %": "{:+.1f}%",
-        "Potential %": "{:+.1f}%"
+        subset=['Heute %', 'Umsatz-Wachst. %', 'FCF Yield %', 'Potential %']
+    ).applymap(color_net_debt, subset=['Netto-Schulden']).applymap(color_rsi, subset=['RSI']).applymap(color_valuation, subset=['Bewertung']).applymap(color_rating, subset=['Rating']).format({
+        "Heute %": "{:+.2f}%", "Umsatz-Wachst. %": "{:+.1f}%", "FCF Yield %": "{:.1f}%", "Potential %": "{:+.1f}%",
+        "Netto-Schulden": lambda x: format_currency(x),
+        "Forward KGV": lambda x: f"{x:.1f}" if isinstance(x, (int, float)) else "-"
     })
     
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
     
     st.divider()
     
-    # --- PROFI-CHART ---
-    st.subheader("📉 Detail-Analyse & Charts")
-    selected_name = st.selectbox("Aktie für Chart wählen:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
+    # --- DETAIL ANALYSE SEKTION ---
+    st.subheader("📉 Detail-Analyse & Zukunftsausblick")
+    selected_name = st.selectbox("Aktie für Detail-Analyse wählen:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
     active_sym = selected_name.split("(")[-1].replace(")", "")
     
     if active_sym:
-        c_hist = yf.Ticker(active_sym).history(period="1y")
-        tools = st.multiselect("Indikatoren umschalten:", ["Bollinger Bänder", "SMA 50", "SMA 200"], default=["Bollinger Bänder", "SMA 200"])
+        detail_stock = yf.Ticker(active_sym)
+        det_info = detail_stock.info
         
-        fig = go.Figure(data=[go.Candlestick(x=c_hist.index, open=c_hist['Open'], high=c_hist['High'], low=c_hist['Low'], close=c_hist['Close'], name="Kurs")])
+        tab1, tab2 = st.tabs(["📊 Technischer Chart", "🔮 Zukunft & Profil"])
         
-        if "Bollinger Bänder" in tools:
-            ma = c_hist['Close'].rolling(20).mean(); sd = c_hist['Close'].rolling(20).std()
-            fig.add_trace(go.Scatter(x=c_hist.index, y=ma+2*sd, line=dict(color='rgba(173,216,230,0.5)', width=1), name="Boll Oben"))
-            fig.add_trace(go.Scatter(x=c_hist.index, y=ma-2*sd, line=dict(color='rgba(173,216,230,0.5)', width=1), fill='tonexty', name="Boll Unten"))
-        if "SMA 50" in tools:
-            fig.add_trace(go.Scatter(x=c_hist.index, y=c_hist['Close'].rolling(50).mean(), line=dict(color='blue', width=1), name="SMA 50"))
-        if "SMA 200" in tools:
-            fig.add_trace(go.Scatter(x=c_hist.index, y=c_hist['Close'].rolling(200).mean(), line=dict(color='red', width=2), name="SMA 200"))
+        with tab1:
+            c_hist = detail_stock.history(period="1y")
+            tools = st.multiselect("Indikatoren umschalten:", ["Bollinger Bänder", "SMA 50", "SMA 200"], default=["Bollinger Bänder", "SMA 200"])
+            fig = go.Figure(data=[go.Candlestick(x=c_hist.index, open=c_hist['Open'], high=c_hist['High'], low=c_hist['Low'], close=c_hist['Close'], name="Kurs")])
+            if "Bollinger Bänder" in tools:
+                ma = c_hist['Close'].rolling(20).mean(); sd = c_hist['Close'].rolling(20).std()
+                fig.add_trace(go.Scatter(x=c_hist.index, y=ma+2*sd, line=dict(color='rgba(173,216,230,0.5)', width=1), name="Boll Oben"))
+                fig.add_trace(go.Scatter(x=c_hist.index, y=ma-2*sd, line=dict(color='rgba(173,216,230,0.5)', width=1), fill='tonexty', name="Boll Unten"))
+            if "SMA 50" in tools: fig.add_trace(go.Scatter(x=c_hist.index, y=c_hist['Close'].rolling(50).mean(), line=dict(color='blue', width=1), name="SMA 50"))
+            if "SMA 200" in tools: fig.add_trace(go.Scatter(x=c_hist.index, y=c_hist['Close'].rolling(200).mean(), line=dict(color='red', width=2), name="SMA 200"))
+            fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_white", height=500, margin=dict(l=0,r=0,t=10,b=0))
+            st.plotly_chart(fig, use_container_width=True)
             
-        fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_white", height=500, margin=dict(l=0,r=0,t=10,b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        with tab2:
+            col_inf1, col_inf2 = st.columns([2, 1])
+            with col_inf1:
+                st.write("### 📖 Unternehmensprofil & Strategie")
+                summary = det_info.get('longBusinessSummary', "Keine Beschreibung verfügbar.")
+                st.write(summary)
+            with col_inf2:
+                st.write("### 🚀 Wachstumsprognosen")
+                st.metric("Forward KGV (Next Year)", det_info.get('forwardPE', '-'))
+                st.metric("Gewinnwachstum (proj.)", f"{det_info.get('earningsGrowth', 0)*100:.1f}%" if det_info.get('earningsGrowth') else "N/A")
+                st.metric("Kursziel (High)", format_currency(det_info.get('targetHighPrice')))
+                st.metric("Kursziel (Low)", format_currency(det_info.get('targetLowPrice')))
 
 # --- 7. EXPERTEN BRIEFING ---
 if show_briefing:
