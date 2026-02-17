@@ -47,17 +47,19 @@ user_id = "default_user"
 
 # --- 2. PERSISTENZ-FUNKTIONEN ---
 def save_favorites_to_db(ticker_string):
+    """Speichert die Favoriten-Liste in der Cloud."""
     if not db: 
         st.sidebar.warning("Cloud-Speicher nicht verfügbar.")
         return
     try:
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc_ref.set({"list": ticker_string, "updated_at": datetime.now()})
-        st.sidebar.success("✅ Favoriten gespeichert!")
+        st.sidebar.success("✅ Favoriten in der Cloud gespeichert!")
     except Exception as e:
-        st.sidebar.error(f"Fehler: {e}")
+        st.sidebar.error(f"Fehler beim Speichern: {e}")
 
 def load_favorites_from_db():
+    """Lädt die Favoriten-Liste aus der Cloud."""
     default_favs = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
     if not db: return default_favs
     try:
@@ -76,16 +78,18 @@ DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, B
 MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, HEI.DE, JUN3.DE"
 NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, ADBE, AMD, NFLX, PLTR, COIN"
 GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS, MC.PA"
+FAVORITEN_INIT = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
 
 # --- 4. APP SETUP ---
 st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide")
 
+# Initialisierung der Favoriten aus der Cloud beim ersten Start
 if 'ticker_input' not in st.session_state:
     st.session_state.ticker_input = load_favorites_from_db()
 if 'scan_results' not in st.session_state:
     st.session_state.scan_results = None
 
-# Styling
+# Styling-Funktionen
 def color_metric(val):
     try:
         v = float(str(val).replace('%', '').replace('+', ''))
@@ -126,30 +130,32 @@ with st.sidebar.expander("📊 Indizes laden", expanded=False):
     if st.button("MDAX", use_container_width=True): st.session_state.ticker_input = MDAX_LISTE
     if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_100
 
-with st.sidebar.expander("🧠 Experten", expanded=True):
+with st.sidebar.expander("🧠 Experten & Favoriten", expanded=True):
     col1, col2 = st.columns(2)
     if col1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
     if col2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
-    if st.button("🌍 Global Top", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
+    if st.button("🌍 Global Top laden", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
+    if st.button("📂 Meine Cloud-Favoriten laden", help="Lädt deine zuvor gespeicherten Favoriten", use_container_width=True):
+        st.session_state.ticker_input = load_favorites_from_db()
+        st.rerun()
+    if st.button("⭐ Standard Favoriten laden", use_container_width=True): st.session_state.ticker_input = FAVORITEN_INIT
 
 st.sidebar.divider()
-ticker_text = st.sidebar.text_area("⭐ Favoriten-Liste:", value=st.session_state.ticker_input, height=120)
+ticker_text = st.sidebar.text_area("⭐ Meine Favoriten (Editierbar):", value=st.session_state.ticker_input, height=120)
 st.session_state.ticker_input = ticker_text
 
-if st.sidebar.button("💾 Liste speichern", use_container_width=True):
+if st.sidebar.button("💾 Liste dauerhaft speichern", help="Speichert die aktuelle Liste oben in der Cloud", use_container_width=True):
     save_favorites_to_db(ticker_text)
 
 st.sidebar.divider()
 st.sidebar.link_button("🔍 aktien.guide", "https://aktien.guide", use_container_width=True)
 
 st.sidebar.divider()
-rsi_max = st.sidebar.slider("RSI-Filter", 10, 100, 85)
+rsi_max = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
 auto_refresh = st.sidebar.toggle("⏱️ Auto-Update", value=False)
 interval = st.sidebar.slider("Intervall (Sek)", 10, 300, 60)
 
 # --- 6. SCANNER ---
-st.title("💎 Aktien-Radar Pro")
-
 @st.cache_data(ttl=300)
 def scan_tickers(symbols_tuple, rsi_limit):
     results = []
@@ -165,7 +171,7 @@ def scan_tickers(symbols_tuple, rsi_limit):
             h = t.history(period="60d")
             if h.empty or len(h) < 20: continue
             
-            # RSI
+            # RSI Berechnung
             delta = h['Close'].diff()
             up = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
             down = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -176,7 +182,7 @@ def scan_tickers(symbols_tuple, rsi_limit):
                 p = info.get('currentPrice') or h['Close'].iloc[-1]
                 prev = info.get('previousClose', p)
                 
-                # Kennzahlen
+                # Fundamentaldaten
                 peg = info.get('pegRatio') or info.get('trailingPegRatio') or "-"
                 fcf = info.get('freeCashflow')
                 mcap = info.get('marketCap')
@@ -189,7 +195,7 @@ def scan_tickers(symbols_tuple, rsi_limit):
                 target = info.get('targetMeanPrice')
                 potential = ((target - p) / p * 100) if target else 0
                 
-                # Bewertung Logik
+                # Bewertungslogik
                 bewertung = "Neutral"
                 if isinstance(peg, (int, float)):
                     if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
@@ -245,7 +251,7 @@ if st.session_state.scan_results:
     
     st.divider()
     
-    # Detail Analyse
+    # Detail-Analyse Sektion
     selected = st.selectbox("Wähle Aktie für Chart:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
     active_sym = selected.split("(")[-1].replace(")", "")
     
@@ -255,10 +261,12 @@ if st.session_state.scan_results:
         with c_left:
             hist_d = yf.Ticker(active_sym).history(period="1y")
             
-            show_ind = st.multiselect("Indikatoren:", ["SMA 50", "SMA 200", "Bollinger"], default=["SMA 50", "SMA 200"])
+            show_ind = st.multiselect("Chart-Indikatoren:", ["SMA 20", "SMA 50", "SMA 200", "Bollinger"], default=["SMA 50", "SMA 200"])
             
             fig = go.Figure(data=[go.Candlestick(x=hist_d.index, open=hist_d['Open'], high=hist_d['High'], low=hist_d['Low'], close=hist_d['Close'], name="Kurs")])
             
+            if "SMA 20" in show_ind:
+                fig.add_trace(go.Scatter(x=hist_d.index, y=hist_d['Close'].rolling(20).mean(), line=dict(color='yellow', width=1), name="SMA 20"))
             if "SMA 50" in show_ind:
                 fig.add_trace(go.Scatter(x=hist_d.index, y=hist_d['Close'].rolling(50).mean(), line=dict(color='cyan', width=1), name="SMA 50"))
             if "SMA 200" in show_ind:
@@ -276,7 +284,7 @@ if st.session_state.scan_results:
             st.metric("Forward KGV", i.get('forwardPE', '-'))
             st.metric("EBITDA Marge", f"{i.get('ebitdaMargins', 0)*100:.1f}%")
             st.write("**Profil:**")
-            st.caption(i.get('longBusinessSummary', "N/A")[:500] + "...")
+            st.caption(i.get('longBusinessSummary', "Keine Beschreibung verfügbar.")[:500] + "...")
 
 # --- 8. EXPERTEN FEEDS ---
 st.divider()
