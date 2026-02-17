@@ -7,17 +7,21 @@ import urllib.parse
 from datetime import datetime
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (Experten-Portfolios & News)")
+st.title("💎 Aktien-Radar: Global (News & Experten)")
 
-# --- 1. DATENBANKEN ---
+# --- 1. KONFIGURATION (HIER KANNST DU DEINE LISTEN ÄNDERN) ---
+
+# 🟢 HIER: Kopiere die aktuellen Aktien aus dem HGI-Wikifolio hier rein (Kommagetrennt):
+HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT, DDOG" 
+
+# 🔵 HIER: Kopiere die aktuellen Aktien aus dem Szew-Wikifolio hier rein:
+SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW, SHOP"
+
+# Standard-Listen für die anderen Buttons
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
 US_TECH_LISTE = "865985, 870747, 906866, A1CX3T, 918422, A14Y6F, A1JWVX, 552484, A14R7U, A1J5X3, A2QP7J, 851399"
 GLOBAL_TOP_LISTE = "865985, 870747, 918422, 716460, 723610, 840400, 850663, 856958, A0M240, 850517"
 FAVORITEN_LISTE = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE, LHA.DE, 865985"
-
-# EXPERTEN PORTFOLIOS (Top-Werte Simulation)
-HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT" # Typische High-Tech-Investing Werte
-SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW" # Typische Data-Driven Werte
 
 WKN_MAP = {
     # DAX
@@ -37,8 +41,7 @@ WKN_MAP = {
     "A1J5X3": "ANGI", "ANGI": "ANGI", "A2QP7J": "GME", "GAMESTOP": "GME", "A0F5UF": "PLTR", "PALANTIR": "PLTR",
     "A2QP7J": "COIN", "COINBASE": "COIN", "863186": "AMD", "AMD": "AMD", "850663": "KO", "COCA COLA": "KO",
     "856958": "MCD", "MCDONALDS": "MCD", "A0M240": "V", "VISA": "V", "851399": "IBM", "IBM": "IBM",
-    "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B",
-    "A2QJVE": "NU",   "NU HOLDINGS": "NU", "A2N6LE": "CRWD", "CROWDSTRIKE": "CRWD", "A12G4R": "HUBS", "HUBSPOT": "HUBS"
+    "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
 }
 
 # --- HELPER: NEWS FETCH ---
@@ -66,43 +69,57 @@ def get_rss_feed(rss_url):
 
 # --- 2. SEITENLEISTE ---
 st.sidebar.header("1. Listen laden")
-if 'ticker_text' not in st.session_state: st.session_state['ticker_text'] = FAVORITEN_LISTE
-if 'scan_results' not in st.session_state: st.session_state['scan_results'] = None
-if 'scan_news' not in st.session_state: st.session_state['scan_news'] = {}
-if 'last_update' not in st.session_state: st.session_state['last_update'] = None
 
+# Session State für das Textfeld initialisieren
+if 'ticker_text' not in st.session_state:
+    st.session_state.ticker_text = FAVORITEN_LISTE
+
+if 'scan_results' not in st.session_state: st.session_state.scan_results = None
+if 'scan_news' not in st.session_state: st.session_state.scan_news = {}
+if 'last_update' not in st.session_state: st.session_state.last_update = None
+
+# Buttons - Aktualisieren direkt den Session State
 col1, col2 = st.sidebar.columns(2)
 with col1:
-    if st.button("🇩🇪 DAX Liste"): st.session_state['ticker_text'] = DAX_LISTE
+    if st.button("🇩🇪 DAX Liste"): 
+        st.session_state.ticker_text = DAX_LISTE
 with col2:
-    if st.button("🇺🇸 US Tech"): st.session_state['ticker_text'] = US_TECH_LISTE
+    if st.button("🇺🇸 US Tech"): 
+        st.session_state.ticker_text = US_TECH_LISTE
 
 col3, col4 = st.sidebar.columns(2)
 with col3:
-    if st.button("🌍 Global"): st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
+    if st.button("🌍 Global"): 
+        st.session_state.ticker_text = GLOBAL_TOP_LISTE
 with col4:
-    if st.button("⭐ Favoriten"): st.session_state['ticker_text'] = FAVORITEN_LISTE
+    if st.button("⭐ Favoriten"): 
+        st.session_state.ticker_text = FAVORITEN_LISTE
 
+# Textfeld direkt an Session State binden
 st.sidebar.header("2. Eingabe")
-ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", value=st.session_state['ticker_text'], height=150)
+ticker_input = st.sidebar.text_area(
+    "Aktien-Liste (WKN, Name oder Kürzel)", 
+    key="ticker_text", # WICHTIG: Verbindet Feld mit Speicher
+    height=150
+)
 
 st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 auto_refresh = st.sidebar.toggle("⏱️ Live-Modus", value=False)
 
-# NEU: EXPERTEN SEKTION IN SIDEBAR
+# EXPERTEN SEKTION
 st.sidebar.divider()
 st.sidebar.header("4. Experten-Portfolios")
-show_experts = st.sidebar.checkbox("🧠 Experten-News anzeigen", value=True)
+st.sidebar.caption("Lade die Top-Werte der Experten:")
 
-# Buttons um Portfolios direkt in den Scanner zu laden
-st.sidebar.caption("Lade Top-Werte der Experten:")
 if st.sidebar.button("📥 HGI Portfolio laden"):
-    st.session_state['ticker_text'] = HGI_PORTFOLIO
-    st.rerun()
+    st.session_state.ticker_text = HGI_PORTFOLIO
+    st.rerun() # Erzwingt sofortiges Neuladen der Seite
 if st.sidebar.button("📥 Szew Portfolio laden"):
-    st.session_state['ticker_text'] = SZEW_PORTFOLIO
+    st.session_state.ticker_text = SZEW_PORTFOLIO
     st.rerun()
+
+show_experts = st.sidebar.checkbox("🧠 Experten-News anzeigen", value=True)
 
 # --- 3. HAUPTPROGRAMM ---
 
@@ -110,6 +127,7 @@ start_scan = st.button("🚀 Scanner starten", type="primary")
 should_scan = start_scan or auto_refresh
 
 if should_scan:
+    # Lese direkt aus dem (eventuell durch Button aktualisierten) Textfeld
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
     for item in raw_inputs:
@@ -213,15 +231,15 @@ if should_scan:
         status_text.empty()
         progress_bar.empty()
     
-    st.session_state['scan_results'] = temp_results
-    st.session_state['scan_news'] = temp_news
-    st.session_state['last_update'] = datetime.now().strftime("%H:%M:%S")
+    st.session_state.scan_results = temp_results
+    st.session_state.scan_news = temp_news
+    st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
 
 # B) ANZEIGE
-if st.session_state['scan_results']:
-    results = st.session_state['scan_results']
-    news_data = st.session_state['scan_news']
-    last_up = st.session_state['last_update']
+if st.session_state.scan_results:
+    results = st.session_state.scan_results
+    news_data = st.session_state.scan_news
+    last_up = st.session_state.last_update
     
     if auto_refresh: st.markdown(f"🟢 **Live-Modus aktiv** | Zuletzt aktualisiert: **{last_up}**")
     else: st.markdown(f"⚪ Manueller Modus | Stand: **{last_up}**")
