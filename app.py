@@ -9,7 +9,7 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. FIREBASE INITIALISIERUNG ---
+# --- 1. FIREBASE INITIALISIERUNG (Stabilisierte Version) ---
 @st.cache_resource
 def get_db_connection():
     """Initialisiert Firebase stabil mit expliziter Projekt-ID."""
@@ -61,12 +61,22 @@ def load_favorites_from_db():
     except: pass
     return default_favs
 
-# --- 3. DATEN-LISTEN ---
+# --- 3. DATEN-LISTEN (BÖRSEN & INDIZES) ---
+# DEUTSCHLAND
+DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE, BEI.DE, CON.DE, CBK.DE, DBK.DE, RWE.DE, AIR.DE, P911.DE, SY1.DE, SRT3.DE, MRK.DE, HEI.DE, MTX.DE, HEN3.DE, EON.DE, VNA.DE"
+MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, JUN3.DE, GXI.DE, TAG.DE, WCH.DE, NEM.DE, AIXA.DE, FRA.DE, JEN.DE, LPK.DE, RTL.DE, GFG.DE, BC8.DE"
+SDAX_LISTE = "SDF.DE, GFG.DE, BC8.DE, MOR.DE, ADV.DE, HDD.DE, HHFA.DE, EUZ.DE, BYW6.DE, S92.DE, JEN.DE, AT1.DE, 1COV.DE"
+TECDAX_LISTE = "SAP.DE, IFX.DE, DTE.DE, AFX.DE, AIXA.DE, JEN.DE, NEM.DE, O2D.DE, MOR.DE, SRT3.DE, ADV.DE, EVT.DE, VAR1.DE"
+
+# USA
+SP500_LISTE = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, BRK-B, LLY, AVGO, JPM, UNH, V, XOM, MA, PG, COST, JNJ, HD, ABBV, MRK, CRM, CVX, BAC, WMT, PEP"
+NASDAQ_LISTE = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, AZN, CSCO, TMUS, ADBE, AMD, NFLX, INTC, TXN, AMAT, QCOM, PLTR, COIN"
+DOW_LISTE = "UNH, GS, HD, MSFT, CRM, AMGN, V, CAT, MCD, BA, VZ, DIS, KO, JPM, JNJ, PG, AAPL, MMM, IBM, AXP"
+
+# EXPERTEN & GLOBAL
 HGI_TICKERS = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP"
 SZEW_TICKERS = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
-DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE"
-NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, ADBE, AMD, NFLX, PLTR, COIN"
-GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS"
+GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS, MC.PA, OR.PA, RMS.PA"
 FAVORITEN_INIT = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
 
 # --- 4. APP KONFIGURATION ---
@@ -77,7 +87,7 @@ if 'ticker_input' not in st.session_state:
 if 'scan_results' not in st.session_state:
     st.session_state.scan_results = None
 
-# Styling
+# --- STYLING FUNKTIONEN ---
 def color_metric(val):
     try:
         v = float(str(val).replace('%', '').replace('+', ''))
@@ -90,20 +100,51 @@ def color_rsi(val):
         return f'background-color: {color}; color: black' if color != 'white' else ''
     except: return ''
 
+def color_debt(val):
+    try:
+        if val < 0: return 'background-color: rgba(0, 255, 0, 0.1); color: #00ff00'
+        if val > 0: return 'background-color: rgba(255, 75, 75, 0.1); color: #ff4b4b'
+    except: pass
+    return ''
+
+def color_valuation(val):
+    if val == "Unterbewertet": return 'background-color: #006400; color: white'
+    if val == "Günstig": return 'background-color: #90EE90; color: black'
+    if val == "Überbewertet": return 'background-color: #8B0000; color: white'
+    return ''
+
+def format_currency(val):
+    if val is None or pd.isna(val): return "-"
+    abs_val = abs(val)
+    if abs_val >= 1e9: return f"{val / 1e9:.2f} Mrd"
+    elif abs_val >= 1e6: return f"{val / 1e6:.2f} Mio"
+    return str(round(val, 2))
+
 # --- 5. SIDEBAR ---
 st.sidebar.header("⚙️ Konfiguration")
 
 if db: st.sidebar.success("🟢 Cloud aktiv")
 else: st.sidebar.warning("🔴 Cloud offline")
 
-with st.sidebar.expander("📊 Indizes laden", expanded=False):
-    if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
-    if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_100
+# DEUTSCHLAND MENÜ
+with st.sidebar.expander("🇩🇪 Deutsche Börse", expanded=False):
+    if st.button("DAX 40 laden", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
+    if st.button("MDAX laden", use_container_width=True): st.session_state.ticker_input = MDAX_LISTE
+    if st.button("SDAX laden", use_container_width=True): st.session_state.ticker_input = SDAX_LISTE
+    if st.button("TecDAX laden", use_container_width=True): st.session_state.ticker_input = TECDAX_LISTE
 
+# USA MENÜ
+with st.sidebar.expander("🇺🇸 US-Börsen", expanded=False):
+    if st.button("S&P 500 (Top) laden", use_container_width=True): st.session_state.ticker_input = SP500_LISTE
+    if st.button("Nasdaq 100 laden", use_container_width=True): st.session_state.ticker_input = NASDAQ_LISTE
+    if st.button("Dow Jones 30 laden", use_container_width=True): st.session_state.ticker_input = DOW_LISTE
+
+# EXPERTEN & CLOUD
 with st.sidebar.expander("🧠 Experten & Favoriten", expanded=True):
     col_e1, col_e2 = st.columns(2)
     if col_e1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
     if col_e2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
+    if st.button("🌍 Global Top laden", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
     if st.button("📂 Cloud-Favoriten laden", use_container_width=True):
         st.session_state.ticker_input = load_favorites_from_db()
         st.rerun()
@@ -120,10 +161,10 @@ rsi_limit = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
 auto_refresh = st.sidebar.toggle("⏱️ Auto-Update", value=False)
 refresh_interval = st.sidebar.slider("Intervall (Sekunden)", 10, 300, 60)
 
-# --- 6. CORE SCANNER (Optimiert auf Aktualisierung) ---
+# --- 6. CORE SCANNER ---
 st.title("💎 Aktien-Radar Pro")
 
-@st.cache_data(ttl=60) # Kürzere Zeit für bessere Aktualität
+@st.cache_data(ttl=60)
 def fetch_stock_data_robust(symbols_tuple, rsi_max, force_key=0):
     results = []
     symbols = [s.strip().upper() for s in list(symbols_tuple) if s.strip()]
@@ -147,7 +188,7 @@ def fetch_stock_data_robust(symbols_tuple, rsi_max, force_key=0):
                 info = {}
                 try:
                     info = t.info
-                    time.sleep(0.1) # Minipause gegen Rate Limit
+                    time.sleep(0.15) # Schutz gegen Rate Limits
                 except: info = {}
                 
                 p = info.get('currentPrice') or h['Close'].iloc[-1]
@@ -165,7 +206,6 @@ def fetch_stock_data_robust(symbols_tuple, rsi_max, force_key=0):
                 target = info.get('targetMeanPrice')
                 potential = ((target - p) / p * 100) if target else 0
                 
-                # Bewertung Logik
                 bewertung = "Neutral"
                 if isinstance(peg, (int, float)):
                     if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
@@ -198,18 +238,12 @@ def fetch_stock_data_robust(symbols_tuple, rsi_max, force_key=0):
     bar.empty()
     return results
 
-# Scanner Start mit Cache-Löschung bei manuellem Klick
 if st.button("🚀 Scanner starten", type="primary"):
-    st.cache_data.clear() # Erzwingt komplette Neuabfrage aller Daten
+    st.cache_data.clear()
     sym_list = tuple(ticker_text.split(","))
     if sym_list:
         st.session_state.scan_results = fetch_stock_data_robust(sym_list, rsi_limit, force_key=time.time())
         st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
-
-if auto_refresh and not st.session_state.get('scan_results'):
-    sym_list = tuple(ticker_text.split(","))
-    st.session_state.scan_results = fetch_stock_data_robust(sym_list, rsi_limit)
-    st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
 
 # --- 7. ANZEIGE ---
 if st.session_state.scan_results:
@@ -220,27 +254,6 @@ if st.session_state.scan_results:
                     "Umsatz-Wachst. %", "PEG", "FCF Yield %", "Netto-Schuld", 
                     "Rating", "Potential %", "Bewertung"]
     
-    # Styling Funktionen
-    def format_currency(val):
-        if val is None or pd.isna(val): return "-"
-        abs_val = abs(val)
-        if abs_val >= 1e9: return f"{val / 1e9:.2f} Mrd"
-        elif abs_val >= 1e6: return f"{val / 1e6:.2f} Mio"
-        return str(round(val, 2))
-
-    def color_valuation(val):
-        if val == "Unterbewertet": return 'background-color: #006400; color: white'
-        if val == "Günstig": return 'background-color: #90EE90; color: black'
-        if val == "Überbewertet": return 'background-color: #8B0000; color: white'
-        return ''
-
-    def color_debt(val):
-        try:
-            if val < 0: return 'background-color: rgba(0, 255, 0, 0.1); color: #00ff00'
-            if val > 0: return 'background-color: rgba(255, 75, 75, 0.1); color: #ff4b4b'
-        except: pass
-        return ''
-
     styled_df = df_all[display_cols].style.applymap(color_metric, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-Wachst. %'])\
                         .applymap(color_rsi, subset=['RSI'])\
                         .applymap(color_debt, subset=['Netto-Schuld'])\
