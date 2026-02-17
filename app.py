@@ -9,80 +9,80 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. FIREBASE INITIALISIERUNG (Maximale Stabilität) ---
-@st.cache_resource
-def get_db_connection():
-    """Initialisiert die Firebase-Verbindung mit expliziter Projekt-ID Zuweisung."""
-    if not firebase_admin._apps:
+# --- 1. FIREBASE INITIALISIERUNG (Hochverfügbarkeits-Modus) ---
+def get_db_client():
+    """Versucht die Firebase-Verbindung herzustellen oder zurückzugeben."""
+    # Falls bereits initialisiert, Client zurückgeben
+    if firebase_admin._apps:
         try:
-            config = None
-            # Versuche Konfiguration aus Globals zu lesen (Canvas Umgebung)
-            if "__firebase_config" in globals():
-                raw_config = globals()["__firebase_config"]
-                config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
-            
-            if config:
-                # Projekt-ID ist kritisch für Firestore
-                project_id = config.get('project_id') or config.get('projectId')
-                if not project_id:
-                    st.sidebar.error("❌ Kritischer Fehler: Projekt-ID fehlt in Config.")
-                    return None
-                
-                cred = credentials.Certificate(config)
-                # App mit expliziter Projekt-ID initialisieren
-                firebase_admin.initialize_app(cred, {
-                    'projectId': project_id,
-                    'databaseURL': f"https://{project_id}.firebaseio.com"
-                })
-                # Client explizit mit Projekt-ID anfordern
-                return firestore.client(project=project_id)
-            else:
-                st.sidebar.warning("⚠️ Keine Cloud-Konfiguration gefunden.")
-                return None
-        except Exception as e:
-            st.sidebar.error(f"❌ Datenbank-Verbindungsfehler: {str(e)}")
-            return None
-    else:
-        # Falls App schon initialisiert, Client erneut sicher abrufen
-        try:
-            config = None
-            if "__firebase_config" in globals():
-                raw_config = globals()["__firebase_config"]
-                config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
-            
-            if config:
-                pid = config.get('project_id') or config.get('projectId')
-                return firestore.client(project=pid)
             return firestore.client()
         except:
-            return None
+            pass
 
-# Globale Variablen für DB und Identifikation
-db = get_db_connection()
+    try:
+        config = None
+        # Suche nach der Konfiguration in den globalen Umgebungsvariablen
+        if "__firebase_config" in globals():
+            raw_cfg = globals()["__firebase_config"]
+            config = json.loads(raw_cfg) if isinstance(raw_cfg, str) else raw_cfg
+        
+        if config:
+            # Projekt-ID ist zwingend für den Firestore Client
+            project_id = config.get('project_id') or config.get('projectId')
+            if not project_id:
+                return None
+            
+            cred = credentials.Certificate(config)
+            firebase_admin.initialize_app(cred, {'projectId': project_id})
+            return firestore.client()
+        else:
+            # Fallback für lokale Entwicklung
+            try:
+                firebase_admin.initialize_app()
+                return firestore.client()
+            except:
+                return None
+    except Exception:
+        return None
+
+# Initialisierung beim Start
+db = get_db_client()
 app_id = globals().get("__app_id", "default-app-id")
-user_id = "default_user" 
+# Wir nutzen eine feste User-ID für die Favoriten in dieser Umgebung
+user_id = "default_user_radar"
 
-# --- 2. PERSISTENZ-FUNKTIONEN ---
+# --- 2. PERSISTENZ-FUNKTIONEN (Cloud-Speicher) ---
 def save_favorites_to_db(ticker_string):
     """Speichert die Favoriten-Liste dauerhaft in der Cloud."""
+    # Redundanter Verbindungsversuch falls db None ist
+    global db
+    if not db:
+        db = get_db_client()
+        
     if not db: 
-        st.sidebar.error("Cloud-Speicher nicht verfügbar. (Client fehlt)")
+        st.sidebar.error("❌ Cloud-Speicher nicht verfügbar. Bitte Seite neu laden.")
         return
+    
     try:
-        # Pfad gemäß Regel 1: /artifacts/{appId}/users/{userId}/{collectionName}
+        # Pfad-Regel: /artifacts/{appId}/users/{userId}/{collectionName}
+        # Dokument-ID ist 'favorites'
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc_ref.set({
             "list": ticker_string,
             "updated_at": datetime.now()
         }, merge=True)
-        st.sidebar.success("✅ Liste in Cloud gespeichert!")
+        st.sidebar.success("✅ Favoriten dauerhaft gespeichert!")
     except Exception as e:
-        st.sidebar.error(f"Fehler beim Schreiben: {str(e)}")
+        st.sidebar.error(f"❌ Speicherfehler: {str(e)}")
 
 def load_favorites_from_db():
-    """Lädt die Favoriten-Liste beim App-Start."""
+    """Lädt die Favoriten-Liste beim App-Start aus der Cloud."""
     default_favs = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
-    if not db: return default_favs
+    global db
+    if not db:
+        db = get_db_client()
+    if not db: 
+        return default_favs
     try:
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc = doc_ref.get()
@@ -92,22 +92,22 @@ def load_favorites_from_db():
         pass
     return default_favs
 
-# --- 3. DATEN-LISTEN ---
+# --- 3. DATEN-LISTEN (VORGABEN) ---
 HGI_TICKERS = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP"
 SZEW_TICKERS = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
-DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE, BEI.DE, CON.DE, CBK.DE, DBK.DE, RWE.DE, AIR.DE"
-MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, HEI.DE, JUN3.DE"
+DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE"
 NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, ADBE, AMD, NFLX, PLTR, COIN"
-GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS, MC.PA"
+GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS"
 FAVORITEN_INIT = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
 
 # --- 4. APP SETUP ---
 st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide")
 
+# Initialisierung der Favoriten
 if 'ticker_input' not in st.session_state:
     st.session_state.ticker_input = load_favorites_from_db()
 
-# Styling-Hilfen
+# --- STYLING FUNKTIONEN ---
 def color_metric(val):
     try:
         v = float(str(val).replace('%', '').replace('+', ''))
@@ -121,19 +121,6 @@ def color_rsi(val):
     except: pass
     return ''
 
-def color_debt(val):
-    try:
-        if val < 0: return 'background-color: rgba(0, 255, 0, 0.1); color: #00ff00'
-        if val > 0: return 'background-color: rgba(255, 75, 75, 0.1); color: #ff4b4b'
-    except: pass
-    return ''
-
-def color_valuation(val):
-    if val == "Unterbewertet": return 'background-color: #006400; color: white'
-    if val == "Günstig": return 'background-color: #90EE90; color: black'
-    if val == "Überbewertet": return 'background-color: #8B0000; color: white'
-    return ''
-
 def format_curr(val):
     if val is None or pd.isna(val): return "-"
     if abs(val) >= 1e9: return f"{val/1e9:.2f} Mrd"
@@ -141,43 +128,44 @@ def format_curr(val):
     return str(round(val, 2))
 
 # --- 5. SIDEBAR ---
-st.sidebar.header("⚙️ Menü")
+st.sidebar.header("⚙️ Konfiguration")
 
 # Status-Anzeige
 if db:
     st.sidebar.success("🟢 Cloud-Speicher verbunden")
 else:
     st.sidebar.error("🔴 Cloud-Speicher offline")
+    if st.sidebar.button("🔄 Verbindung erneut versuchen"):
+        st.rerun()
 
 with st.sidebar.expander("📊 Indizes laden", expanded=False):
     if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
-    if st.button("MDAX", use_container_width=True): st.session_state.ticker_input = MDAX_LISTE
     if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_100
 
 with st.sidebar.expander("🧠 Experten & Favoriten", expanded=True):
-    col1, col2 = st.columns(2)
-    if col1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
-    if col2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
+    c1, c2 = st.columns(2)
+    if c1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
+    if c2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
     if st.button("🌍 Global Top laden", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
-    if st.button("📂 Cloud-Favoriten laden", help="Holt deine gespeicherte Liste aus der DB", use_container_width=True):
+    if st.button("📂 Cloud-Favoriten laden", use_container_width=True):
         st.session_state.ticker_input = load_favorites_from_db()
         st.rerun()
-    if st.button("⭐ Reset auf Standard", use_container_width=True): st.session_state.ticker_input = FAVORITEN_INIT
+    if st.button("⭐ Standard Favoriten laden", use_container_width=True): st.session_state.ticker_input = FAVORITEN_INIT
 
 st.sidebar.divider()
 ticker_text = st.sidebar.text_area("⭐ Meine Ticker-Liste:", value=st.session_state.ticker_input, height=120)
 st.session_state.ticker_input = ticker_text
 
-if st.sidebar.button("💾 Liste dauerhaft speichern", help="Speichert diese Liste in deinem Cloud-Profil", use_container_width=True):
+if st.sidebar.button("💾 Liste dauerhaft speichern", use_container_width=True):
     save_favorites_to_db(ticker_text)
 
 st.sidebar.divider()
 st.sidebar.link_button("🔍 aktien.guide öffnen", "https://aktien.guide", use_container_width=True)
 
 st.sidebar.divider()
-rsi_max = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
+rsi_max = st.sidebar.slider("RSI-Filter", 10, 100, 85)
 auto_refresh = st.sidebar.toggle("⏱️ Auto-Update", value=False)
-interval = st.sidebar.slider("Intervall (Sekunden)", 10, 300, 60)
+interval = st.sidebar.slider("Intervall (Sek)", 10, 300, 60)
 
 # --- 6. SCANNER ---
 @st.cache_data(ttl=300)
@@ -241,10 +229,15 @@ if st.session_state.get('scan_results'):
     st.write(f"Zuletzt aktualisiert: **{st.session_state.last_update}**")
     df = pd.DataFrame(st.session_state.scan_results)
     
+    def color_valuation(val):
+        if val == "Unterbewertet": return 'background-color: #006400; color: white'
+        if val == "Günstig": return 'background-color: #90EE90; color: black'
+        if val == "Überbewertet": return 'background-color: #8B0000; color: white'
+        return ''
+
     st.dataframe(
         df.style.applymap(color_metric, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-W. %'])
         .applymap(color_rsi, subset=['RSI'])
-        .applymap(color_debt, subset=['Netto-Schuld'])
         .applymap(color_valuation, subset=['Bewertung'])
         .format({
             "Heute %": "{:+.2f}%", "Potential %": "{:+.1f}%", "Umsatz-W. %": "{:+.1f}%", "FCF Yield %": "{:.1f}%",
