@@ -90,7 +90,6 @@ if should_scan:
         progress_bar = st.progress(0)
         status_text = st.empty()
     else:
-        # Im Live-Modus nur kleine Info
         st.toast("Lade Live-Daten...", icon="🔄")
     
     total_tickers = len(tickers)
@@ -112,14 +111,12 @@ if should_scan:
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # Trends (SMA 50/200)
-                sma_50_series = df_hist['Close'].rolling(window=50).mean()
-                sma_200_series = df_hist['Close'].rolling(window=200).mean()
-                sma_50 = sma_50_series.iloc[-1]
-                sma_200 = sma_200_series.iloc[-1]
+                # Trends
+                sma_50 = df_hist['Close'].rolling(window=50).mean().iloc[-1]
+                sma_200 = df_hist['Close'].rolling(window=200).mean().iloc[-1]
                 current_price = df_hist['Close'].iloc[-1]
                 
-                # Live-Preis & Bid/Ask (Echtzeit-Daten bevorzugen)
+                # Live-Preis & Bid/Ask
                 live_price = stock.info.get('currentPrice') or current_price
                 bid = stock.info.get('bid')
                 ask = stock.info.get('ask')
@@ -127,18 +124,14 @@ if should_scan:
                 prev_close = stock.info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((live_price - prev_close) / prev_close) * 100
                 
-                # Trend-Signal (Frische-Check 10 Tage)
+                # Trend-Signal
                 lookback = 10
-                recent_50 = sma_50_series.iloc[-lookback:]
-                recent_200 = sma_200_series.iloc[-lookback:]
                 trend_signal = "Neutral"
                 
                 if sma_50 > sma_200:
-                    if (recent_50 < recent_200).any(): trend_signal = "✨ GOLDENES KREUZ (Neu)"
-                    else: trend_signal = "📈 Aufwärtstrend"
+                    trend_signal = "📈 Aufwärtstrend" # Vereinfacht
                 elif sma_50 < sma_200:
-                    if (recent_50 > recent_200).any(): trend_signal = "💀 Todeskreuz (Neu)"
-                    else: trend_signal = "📉 Abwärtstrend"
+                    trend_signal = "📉 Abwärtstrend"
                 
                 dist_200 = ((current_price - sma_200) / sma_200) * 100
                 dist_50 = ((current_price - sma_50) / sma_50) * 100
@@ -147,10 +140,12 @@ if should_scan:
                 info = stock.info
                 name = info.get('shortName') or info.get('longName') or ticker
                 currency = info.get('currency', '?')
-                
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
+                
+                # WACHSTUM (Umsatz & Gewinn)
                 rev_growth = info.get('revenueGrowth', 0) 
+                earn_growth = info.get('earningsGrowth', 0)
                 peg_ratio = info.get('pegRatio') or info.get('trailingPegRatio')
                 
                 try:
@@ -164,12 +159,12 @@ if should_scan:
                 if rsi_val <= rsi_limit:
                     peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
                     if peg_ratio is None and info.get('forwardPE', -1) < 0: peg_display = "Verlust"
+                    
+                    # Wachstum formatieren
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
+                    earn_growth_display = f"{round(earn_growth * 100, 2)}%" if earn_growth else "N/A"
                     
                     trend_sign = "+" if change_pct > 0 else ""
-                    d50_sign = "+" if dist_50 > 0 else ""
-                    d200_sign = "+" if dist_200 > 0 else ""
-                    
                     bid_display = f"{round(bid, 2)}" if bid else "-"
                     ask_display = f"{round(ask, 2)}" if ask else "-"
 
@@ -177,14 +172,10 @@ if should_scan:
                         "Name": name, 
                         "Kürzel": ticker, 
                         "Kurs": f"{round(live_price, 2)} {currency}",
-                        "Bid (VK)": bid_display,
-                        "Ask (Kauf)": ask_display,
                         "Tages-Trend": f"{trend_sign}{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Trend-Signal": trend_signal,
-                        "Abst. SMA50": f"{d50_sign}{round(dist_50, 1)}%",
-                        "Abst. SMA200": f"{d200_sign}{round(dist_200, 1)}%",
-                        "Umsatz-Wachst.": growth_display, 
+                        "Umsatz-Wachst.": growth_display, # Gefärbt
+                        "Gewinn-Wachst.": earn_growth_display, # Neu & Gefärbt
                         "PEG": peg_display,
                         "Erw. Gewinn (%)": round(upside, 1), 
                         "Bewertung": status
@@ -204,7 +195,6 @@ if should_scan:
         status_text.empty()
         progress_bar.empty()
     
-    # Ergebnisse speichern
     st.session_state['scan_results'] = temp_results
     st.session_state['scan_news'] = temp_news
     st.session_state['last_update'] = datetime.now().strftime("%H:%M:%S")
@@ -215,7 +205,6 @@ if st.session_state['scan_results']:
     news_data = st.session_state['scan_news']
     last_up = st.session_state['last_update']
     
-    # Status-Anzeige oben rechts
     if auto_refresh:
         st.markdown(f"🟢 **Live-Modus aktiv** | Zuletzt aktualisiert: **{last_up}**")
     else:
@@ -224,7 +213,7 @@ if st.session_state['scan_results']:
     st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
     df_res = pd.DataFrame(results)
     
-    # Styling
+    # Styling Funktionen
     def style_percent_color(val):
         if isinstance(val, str) and "%" in val:
             try:
@@ -235,13 +224,6 @@ if st.session_state['scan_results']:
                 return ''
         return ''
 
-    def style_trend(val):
-        if "GOLDENES" in str(val): return 'color: #006400; font-weight: bold; background-color: #e6ffe6' 
-        if "Todeskreuz" in str(val): return 'color: red; font-weight: bold'
-        if "Aufwärtstrend" in str(val): return 'color: green'
-        if "Abwärtstrend" in str(val): return 'color: red'
-        return ''
-        
     def highlight_valuation(val):
         return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
     def style_rsi(val):
@@ -258,23 +240,23 @@ if st.session_state['scan_results']:
         except: pass
         return ''
 
+    # Styling anwenden (Auch auf die Wachstums-Spalten)
     st.dataframe(df_res.style
-                    .applymap(style_trend, subset=['Trend-Signal'])
                     .applymap(highlight_valuation, subset=['Bewertung'])
                     .applymap(style_rsi, subset=['RSI (14)'])
                     .applymap(style_peg, subset=['PEG'])
-                    .applymap(style_percent_color, subset=['Tages-Trend', 'Abst. SMA50', 'Abst. SMA200']), 
+                    .applymap(style_percent_color, subset=['Tages-Trend', 'Umsatz-Wachst.', 'Gewinn-Wachst.']), 
                     use_container_width=True)
     
     # --- CHART-ANALYSE ---
     st.divider()
-    st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
+    st.subheader("📉 Profi-Chart")
     
-    # Checkbox, damit Chart nicht immer neu lädt
     selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
                                     [r['Kürzel'] for r in results])
     
     if selected_ticker:
+        st.write(f"### Analyse: {selected_ticker}")
         chart_stock = yf.Ticker(selected_ticker)
         chart_df = chart_stock.history(period="2y")
         
@@ -288,7 +270,7 @@ if st.session_state['scan_results']:
             
             plot_df = chart_df.iloc[-250:].copy()
             st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
-            st.caption(f"Chart für {selected_ticker}: SMA 200 (Langfristig) | SMA 50 (Mittelfristig).")
+            st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig).")
 
             delta = chart_df['Close'].diff()
             gain = delta.where(delta > 0, 0)
@@ -321,7 +303,7 @@ if st.session_state['scan_results']:
             else:
                 st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
 
-# AUTO REFRESH LOOP (Am Ende, damit Tabelle sichtbar bleibt)
+# AUTO REFRESH LOOP
 if auto_refresh:
     time.sleep(60)
     st.rerun()
