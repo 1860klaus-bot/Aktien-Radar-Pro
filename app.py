@@ -9,7 +9,7 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. FIREBASE INITIALISIERUNG (Fix für ValueError) ---
+# --- 1. FIREBASE INITIALISIERUNG ---
 @st.cache_resource
 def get_db_connection():
     """Initialisiert Firebase stabil mit expliziter Projekt-ID."""
@@ -19,22 +19,18 @@ def get_db_connection():
             if config_str:
                 config = json.loads(config_str)
                 cred = credentials.Certificate(config)
-                # Projekt-ID explizit aus der Config auslesen
                 project_id = config.get('project_id')
                 firebase_admin.initialize_app(cred, {
                     'projectId': project_id,
                 })
-                # Client explizit mit der Projekt-ID anfordern
                 return firestore.client(project=project_id)
             else:
-                # Lokale Entwicklung
                 firebase_admin.initialize_app()
                 return firestore.client()
         except Exception as e:
             st.sidebar.error(f"Datenbank-Initialisierung fehlgeschlagen: {e}")
             return None
     else:
-        # Wenn App bereits da, Client mit Projekt-ID holen
         try:
             config_str = globals().get("__firebase_config")
             if config_str:
@@ -61,27 +57,29 @@ def save_favorites_to_db(ticker_string):
         st.sidebar.error(f"Speichern fehlgeschlagen: {e}")
 
 def load_favorites_from_db():
-    if not db: return "NVDA, TSLA, AAPL, SAP.DE"
+    default_favs = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
+    if not db: return default_favs
     try:
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc = doc_ref.get()
         if doc.exists:
-            return doc.to_dict().get("list", "NVDA, TSLA, AAPL, SAP.DE")
+            return doc.to_dict().get("list", default_favs)
     except: pass
-    return "NVDA, TSLA, AAPL, SAP.DE"
+    return default_favs
 
-# --- 3. DATEN-LISTEN (INDIZES) ---
+# --- 3. DATEN-LISTEN (INDIZES & EXPERTEN) ---
 HGI_TICKERS = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP"
 SZEW_TICKERS = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
 
-DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE, BEI.DE, CON.DE, CBK.DE, DBK.DE, RWE.DE"
-MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, HEI.DE, JUN3.DE"
-SDAX_LISTE = "SDF.DE, GFG.DE, BC8.DE, MOR.DE, ADV.DE, HDD.DE, HHFA.DE, EUZ.DE"
+DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE, BEI.DE, CON.DE, CBK.DE, DBK.DE, RWE.DE, AIR.DE, P911.DE, SY1.DE, SRT3.DE"
+MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, HEI.DE, JUN3.DE, GXI.DE, TAG.DE, WCH.DE, NEM.DE"
+SDAX_LISTE = "SDF.DE, GFG.DE, BC8.DE, MOR.DE, ADV.DE, HDD.DE, HHFA.DE, EUZ.DE, BYW6.DE, S92.DE"
 
-SP500_TOP = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, BRK-B, LLY, AVGO, JPM, UNH, V, XOM, MA, PG, COST"
-NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, ADBE, AMD, NFLX, PLTR, COIN"
-DOW_JONES = "UNH, GS, HD, MSFT, CRM, AMGN, V, CAT, MCD, BA, VZ, DIS, KO, JPM"
-GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS"
+SP500_TOP = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, BRK-B, LLY, AVGO, JPM, UNH, V, XOM, MA, PG, COST, JNJ, HD, ABBV, MRK"
+NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, AZN, CSCO, TMUS, ADBE, AMD, NFLX, INTC, TXN, AMAT, QCOM"
+DOW_JONES = "UNH, GS, HD, MSFT, CRM, AMGN, V, CAT, MCD, BA, VZ, DIS, KO, JPM, JNJ, PG, AAPL, MMM, IBM, AXP"
+GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS, MC.PA, OR.PA, RMS.PA"
+FAVORITEN_INIT = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
 
 # --- 4. APP KONFIGURATION ---
 st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide")
@@ -89,7 +87,7 @@ st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide
 if 'ticker_input' not in st.session_state:
     st.session_state.ticker_input = load_favorites_from_db()
 if 'scan_results' not in st.session_state:
-    st.session_state.scan_results = None
+    st.session_results = None
 
 # --- STYLING FUNKTIONEN ---
 def color_growth(val):
@@ -139,9 +137,10 @@ with st.sidebar.expander("🇺🇸 US Indizes", expanded=False):
 
 with st.sidebar.expander("🧠 Experten & Favoriten", expanded=True):
     col_e1, col_e2 = st.columns(2)
-    if col_e1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
-    if col_e2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
-    if st.button("🌍 Global Top", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
+    if col_e1.button("HGI (HGI-Liste)", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
+    if col_e2.button("Szew (Szew-Liste)", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
+    if st.button("🌍 Global Top laden", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
+    if st.button("⭐ Standard Favoriten laden", use_container_width=True): st.session_state.ticker_input = FAVORITEN_INIT
 
 st.sidebar.divider()
 st.sidebar.subheader("⭐ Meine Favoriten")
@@ -175,7 +174,6 @@ def fetch_stock_data(symbols_tuple, rsi_max):
             h = t.history(period="60d")
             if h.empty or len(h) < 20: continue
             
-            # RSI 14
             delta = h['Close'].diff()
             up = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
             down = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -268,7 +266,6 @@ if st.session_state.scan_results:
             hist_obj = yf.Ticker(active_sym)
             hist_d = hist_obj.history(period="1y")
             
-            # Indikatoren-Auswahl
             selected_indicators = st.multiselect(
                 "Technische Indikatoren wählen:",
                 ["Bollinger Bänder", "SMA 20", "SMA 50", "SMA 200"],
@@ -280,28 +277,23 @@ if st.session_state.scan_results:
                 name="Kurs"
             )])
             
-            # SMA 20
             if "SMA 20" in selected_indicators:
                 sma20 = hist_d['Close'].rolling(window=20).mean()
                 fig.add_trace(go.Scatter(x=hist_d.index, y=sma20, line=dict(color='yellow', width=1), name="SMA 20"))
             
-            # SMA 50
             if "SMA 50" in selected_indicators:
                 sma50 = hist_d['Close'].rolling(window=50).mean()
                 fig.add_trace(go.Scatter(x=hist_d.index, y=sma50, line=dict(color='cyan', width=1.5), name="SMA 50"))
                 
-            # SMA 200
             if "SMA 200" in selected_indicators:
                 sma200 = hist_d['Close'].rolling(window=200).mean()
                 fig.add_trace(go.Scatter(x=hist_d.index, y=sma200, line=dict(color='red', width=2), name="SMA 200"))
                 
-            # Bollinger Bänder
             if "Bollinger Bänder" in selected_indicators:
                 sma_bb = hist_d['Close'].rolling(window=20).mean()
                 std_bb = hist_d['Close'].rolling(window=20).std()
                 upper_bb = sma_bb + (std_bb * 2)
                 lower_bb = sma_bb - (std_bb * 2)
-                
                 fig.add_trace(go.Scatter(x=hist_d.index, y=upper_bb, line=dict(color='rgba(173, 216, 230, 0.4)', width=1), name="BB Oben"))
                 fig.add_trace(go.Scatter(x=hist_d.index, y=lower_bb, line=dict(color='rgba(173, 216, 230, 0.4)', width=1), fill='tonexty', fillcolor='rgba(173, 216, 230, 0.1)', name="BB Unten"))
 
@@ -315,15 +307,17 @@ if st.session_state.scan_results:
             st.write("**Unternehmensprofil:**")
             st.caption(detail_i.get('longBusinessSummary', "Keine Info verfügbar.")[:600] + "...")
 
-# RSS FEEDS
+# RSS FEEDS & WIKIFOLIO LINKS
 st.divider()
 col_l, col_r = st.columns(2)
 with col_l:
     st.info("📊 **Stefan Waldhauser (HGI)**")
+    st.link_button("📈 Wikifolio: High-Growth-Investing", "https://www.wikifolio.com/de/de/w/wf0stwtech", use_container_width=True)
     feed_hgi = feedparser.parse("https://hightechinvesting.substack.com/feed")
     for entry in feed_hgi.entries[:3]: st.markdown(f"• [{entry.title}]({entry.link})")
 with col_r:
     st.info("🐻 **Simon Weishar (Szew)**")
+    st.link_button("📈 Wikifolio: Szew-Invest Spezialwerte", "https://www.wikifolio.com/de/de/w/wf00szew01", use_container_width=True)
     feed_szew = feedparser.parse("https://szew.substack.com/feed")
     for entry in feed_szew.entries[:3]: st.markdown(f"• [{entry.title}]({entry.link})")
 
