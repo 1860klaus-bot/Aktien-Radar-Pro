@@ -70,6 +70,17 @@ def color_valuation(val):
     if val == "Überbewertet": return 'background-color: #8B0000; color: white'
     return ''
 
+def color_rating(val):
+    """Farbliche Markierung des Analysten-Ratings"""
+    rating_colors = {
+        "Starker Kauf": 'background-color: #004d00; color: white',
+        "Kauf": 'background-color: #008000; color: white',
+        "Halten": 'background-color: #cca300; color: black',
+        "Verkauf": 'background-color: #e65c00; color: white',
+        "Starker Verkauf": 'background-color: #990000; color: white'
+    }
+    return rating_colors.get(val, '')
+
 # --- 4. SEITENLEISTE (UI & LOGIK) ---
 st.sidebar.header("📂 Portfolios & Listen")
 
@@ -128,6 +139,18 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
                     target = info.get('targetMeanPrice')
                     potential = ((target - price) / price) * 100 if target else 0
                     
+                    # Analysten-Rating mapping
+                    raw_rating = info.get('recommendationKey', '-')
+                    rating_map = {
+                        'strong_buy': 'Starker Kauf',
+                        'buy': 'Kauf',
+                        'hold': 'Halten',
+                        'underperform': 'Verkauf',
+                        'sell': 'Starker Verkauf'
+                    }
+                    display_rating = rating_map.get(raw_rating, raw_rating.capitalize())
+                    num_analysts = info.get('numberOfAnalystOpinions', 0)
+                    
                     # Logik für Bewertung
                     bewertung = "Neutral"
                     if peg:
@@ -147,6 +170,8 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
                         "Gewinn-Wachst. %": round(earn_growth * 100, 1) if earn_growth else 0,
                         "PEG": round(peg, 2) if peg else "-",
                         "Potential %": round(potential, 1) if target else 0,
+                        "Analysten-Rating": display_rating,
+                        "Analysten #": num_analysts,
                         "Bewertung": bewertung
                     })
         except: pass
@@ -170,6 +195,9 @@ if st.session_state.scan_results:
     ).applymap(
         color_valuation, 
         subset=['Bewertung']
+    ).applymap(
+        color_rating, 
+        subset=['Analysten-Rating']
     ).format({
         "Heute %": "{:+.2f}%",
         "Umsatz-Wachst. %": "{:+.1f}%",
