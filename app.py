@@ -94,8 +94,8 @@ if st.button("🚀 Scanner starten", type="primary"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # 2. Golden Cross Berechnung (Smart Logic)
-                # Berechne die Gleitenden Durchschnitte für den ganzen Zeitraum
+                # 2. Golden Cross & Abstände
+                # Berechne die Gleitenden Durchschnitte
                 sma_50_series = df_hist['Close'].rolling(window=50).mean()
                 sma_200_series = df_hist['Close'].rolling(window=200).mean()
                 
@@ -113,20 +113,20 @@ if st.button("🚀 Scanner starten", type="primary"):
                 
                 # Prüfen: Ist aktuell Bullisch (50 > 200)?
                 if sma_50 > sma_200:
-                    # War es in den letzten 10 Tagen mal andersrum? (Crossover)
                     if (recent_50 < recent_200).any():
                         trend_signal = "✨ GOLDENES KREUZ (Neu)"
                     else:
                         trend_signal = "📈 Aufwärtstrend"
                 # Prüfen: Ist aktuell Bärisch (50 < 200)?
                 elif sma_50 < sma_200:
-                    # War es in den letzten 10 Tagen mal andersrum? (Crossover)
                     if (recent_50 > recent_200).any():
                         trend_signal = "💀 Todeskreuz (Neu)"
                     else:
                         trend_signal = "📉 Abwärtstrend"
                 
+                # ABSTÄNDE BERECHNEN
                 dist_200 = ((current_price - sma_200) / sma_200) * 100
+                dist_50 = ((current_price - sma_50) / sma_50) * 100
                 
                 # Fundamentaldaten
                 info = stock.info
@@ -156,7 +156,8 @@ if st.button("🚀 Scanner starten", type="primary"):
                         "Kürzel": ticker, 
                         "Kurs": f"{round(current_price, 2)} {currency}",
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Trend": trend_signal, # Smartes Signal
+                        "Trend": trend_signal,
+                        "Abst. SMA50": f"{round(dist_50, 1)}%",  # NEU
                         "Abst. SMA200": f"{round(dist_200, 1)}%",
                         "Umsatz-Wachst.": growth_display, 
                         "PEG": peg_display,
@@ -188,7 +189,7 @@ if st.session_state['scan_results']:
     
     # Styling
     def style_trend(val):
-        if "GOLDENES" in str(val): return 'color: #006400; font-weight: bold; background-color: #e6ffe6' # Dunkelgrün auf Hellgrün
+        if "GOLDENES" in str(val): return 'color: #006400; font-weight: bold; background-color: #e6ffe6' 
         if "Todeskreuz" in str(val): return 'color: red; font-weight: bold'
         if "Aufwärtstrend" in str(val): return 'color: green'
         if "Abwärtstrend" in str(val): return 'color: red'
@@ -219,57 +220,57 @@ if st.session_state['scan_results']:
     
     # --- CHART-ANALYSE ---
     st.divider()
-    st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
+ st.Unterüberschrift(„📉 Gewinn-Diagramm (Bollinger, SMA 200 & SMA 50)“)
     
-    selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
-                                    [r['Kürzel'] for r in results])
+ selected_ticker = st.Auswahlfeld("Wahle eine Aktie für das Detail-Chart:", 
+                                    [r['Kürzel'] für r in Erbnisse])
     
-    if selected_ticker:
-        st.write(f"### Analyse: {selected_ticker}")
-        chart_stock = yf.Ticker(selected_ticker)
-        chart_df = chart_stock.history(period="2y")
+ wenn ausgewühlter_Ticker:
+ st.Schreiber(f"### Analysieren: {ausgewähler_ticker}")
+ chart_stock = yf.Ticker(ausgewähler_ticker)
+ chart_df = chart_stock.Geschichte(Zeitraum="2 Jahre")
         
-        if not chart_df.empty:
-            chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
-            chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
-            chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
-            chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
-            chart_df['Trend (SMA 200)'] = chart_df['Close'].rolling(window=200).mean()
-            chart_df['Trend (SMA 50)'] = chart_df['Close'].rolling(window=50).mean()
+ wenn nicht chart_df.Lüstern:
+ Diagrammmmm_df['SMA_20'] = chart_df['Schließen'].Walzen(Fenster=20).beteuten()
+ Diagrammmmm_df['Std_Dev'] = chart_df['Schließen'].Walzen(Fenster=20).Geschlechtskrankheit()
+ Diagrammmmm_df[„Oberes Band“] = chart_df['SMA_20'] + (Diagrammmmm_df['Std_Dev'] * 2)
+ Diagrammmmm_df[„Unteres Band“] = chart_df['SMA_20'] - (Diagrammmmm_df['Std_Dev'] * 2)
+ Diagrammmmm_df[„Trend (SMA 200)“] = chart_df['Schließen'].Walzen(Fenster=200).beteuten()
+ Diagrammmmm_df[„Trend (SMA 50)“] = chart_df['Schließen'].Walzen(Fenster=50).beteuten()
             
-            plot_df = chart_df.iloc[-250:].copy()
-            st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
-            st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig). Ein Kreuzen der Linien ist oft ein wichtiges Signal.")
+ plot_df = chart_df.Iloc[-250:].kopieren()
+ st.line_chart(plot_df[['Schließen', „Oberes Band“, „Unteres Band“, „Trend (SMA 200)“, „Trend (SMA 50)“]])
+ st.Untertitel(„Legende: SMA 200 (Langfristig) | KM 50 (Mittelfristig). Ein Kreuz der Linien ist oft ein wichtiges Signal.“)
 
-            delta = chart_df['Close'].diff()
-            gain = delta.where(delta > 0, 0)
-            loss = -delta.where(delta < 0, 0)
-            avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
-            avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
-            chart_df['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+ Delta = Diagramm_df['Schließen'].Diff()
+ Gewinn = Delta.wo(Delta > 0, 0)
+ Lust = - Delta.wo(Delta < 0, 0)
+ avg_gain = Gewinn.ewm(Alpha=1/14, anpassen=Falsch).beteuten()
+ avg_loss = Lust.ewm(Alpha=1/14, anpassen=Falsch).beteuten()
+ Diagrammmmm_df['RSI'] = 100 - (100 / (1 + (Durchschnitt_Gewinn / Durchschnitt_Verlust)))
             
-            rsi_plot = chart_df.iloc[-250:].copy()
-            rsi_plot['Overbought'] = 70
-            rsi_plot['Oversold'] = 30
-            st.line_chart(rsi_plot[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
+ rsi_plot = chart_df.Iloc[-250:].kopieren()
+ rsi_plot[„Überkauf“] = 70
+ rsi_plot[„Überkauf“] = 30
+ st.line_chart(rsi_plot[['RSI', „Überkauf“, „Überkauf“]], Farbe=["#0000FF", "#FF0000", "#00FF00"])
 
-    st.divider()
-    st.subheader("📰 Nachrichten-Ticker")
-    for ticker in news_data:
-        display_name = ticker
-        for wkn, t in WKN_MAP.items():
-            if t == ticker and len(wkn) == 6: display_name = f"{wkn} ({ticker})"
+ st.Teiler()
+ st.Unterüberschrift("📰 Nachrichten-Ticker")
+ für Ticker in news_data:
+ display_name = Ticker
+ für wkn, t in WKN_MAP.Artikel():
+ wenn t == Ticker und Länge(wkn) == 6: display_name = f"{wkn} ({Ticker})"
                 
-        with st.expander(f"Infos zu {display_name}"):
-            articles = news_data.get(ticker, [])
-            if articles:
-                for item in articles:
-                    t = item.get('title') or "News"
-                    l = item.get('link') or f"https://de.finance.yahoo.com/quote/{ticker}"
-                    pub = item.get('publisher') or "Yahoo"
-                    st.markdown(f"**[{t}]({l})**")
-                    st.caption(f"Quelle: {pub}")
-            else:
-                st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
-elif st.button("Erneut scannen um Ergebnisse zu laden"):
-    pass
+ mit st.Expander(f"Infos zu {Anzeige_name}"):
+ Artikel = Nachrichten_Daten.kommen(Ticker, [])
+ wenn Artikel:
+ für Artikel in Artikel:
+ t = Artikel.kommen('Titel') Oder "Neuigkeiten"
+ l = Artikel.kommen('Link') Oder f"https://de.finance.yahoo.com/quote/{Ticker}"
+ Kneipe = Artikel.kommen('Verlag') Oder "Yahoo"
+ st.Markdown(f"**[{t}]({l})**")
+ st.Untertitel(f"Quelle: {Kneipe}")
+ sonst:
+ st.Info(f"Keine direkte Nachrichten. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{Ticker})")
+Elif St.Geschmack(„Erneut scannen um Erfebnisse zu laden“):
+ passieren
