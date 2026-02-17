@@ -22,13 +22,16 @@ st.title("💎 Aktien-Radar: Global (News & Experten)")
 # Die 15 Werte exakt aus deiner Liste
 HGI_PORTFOLIO = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP" 
 HGI_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf0stwtech"
-HGI_SUBSTACK_URL = "https://waldhauser.substack.com"
+HGI_SUBSTACK_URL = "https://hightechinvesting.substack.com"
+HGI_RSS_FEED = "https://hightechinvesting.substack.com/feed"
 
 # 🔵 SIMON WEISHAR (SZEW) - Szew Grundinvestment
 # Aktuelle Top-Holdings (Szew Grundinvestment / Data Driven)
 SZEW_PORTFOLIO = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
 SZEW_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf00szew01"
-SZEW_SUBSTACK_URL = "https://szew.substack.com"
+# Aktualisierter Link zum Substack-Profil
+SZEW_SUBSTACK_URL = "https://substack.com/@szew"
+SZEW_RSS_FEED = "https://szew.substack.com/feed"
 
 # Standard-Listen
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -258,15 +261,15 @@ if st.session_state.scan_results:
             st.info("📊 **Stefan Waldhauser (HGI)**")
             c1a, c1b = st.columns(2)
             c1a.link_button("📈 Wikifolio Trades", HGI_WIKI_URL, use_container_width=True)
-            c1b.link_button("📝 Substack / Blog", HGI_SUBSTACK_URL, use_container_width=True)
-            wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
+            c1b.link_button("📝 Substack", HGI_SUBSTACK_URL, use_container_width=True)
+            wh_news = get_rss_feed(HGI_RSS_FEED)
             for item in wh_news: st.markdown(f"• [{item['title']}]({item['link']})")
         with col2:
             st.info("🐻 **Simon Weishar (Szew)**")
             c2a, c2b = st.columns(2)
             c2a.link_button("📈 Wikifolio Trades", SZEW_WIKI_URL, use_container_width=True)
             c2b.link_button("📝 Substack", SZEW_SUBSTACK_URL, use_container_width=True)
-            sz_news = get_rss_feed("https://szew.substack.com/feed")
+            sz_news = get_rss_feed(SZEW_RSS_FEED)
             for item in sz_news: st.markdown(f"• [{item['title']}]({item['link']})")
 
     st.divider()
