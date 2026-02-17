@@ -39,7 +39,6 @@ st.sidebar.header("1. Listen laden")
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-# Initialisiere Session State
 if 'scan_results' not in st.session_state:
     st.session_state['scan_results'] = None
 if 'scan_news' not in st.session_state:
@@ -68,16 +67,12 @@ auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=Fa
 
 # --- 3. HAUPTPROGRAMM ---
 
-# Start-Button (oder Auto-Start wenn Toggle aktiv)
 start_scan = st.button("🚀 Scanner starten", type="primary")
-
-# Logik: Wenn Button geklickt ODER Auto-Refresh an ist -> Scannen
 should_scan = start_scan or auto_refresh
 
 if should_scan:
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
-    
     for item in raw_inputs:
         if item in WKN_MAP: tickers.append(WKN_MAP[item])
         else: tickers.append(item)
@@ -85,7 +80,6 @@ if should_scan:
     temp_results = []
     temp_news = {}
     
-    # Ladebalken nur anzeigen, wenn NICHT im Auto-Modus (verhindert Flackern)
     if not auto_refresh:
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -103,7 +97,7 @@ if should_scan:
             df_hist = stock.history(period="300d")
             
             if not df_hist.empty and len(df_hist) > 200:
-                # RSI
+                # RSI & Trends
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -111,27 +105,29 @@ if should_scan:
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # Trends
                 sma_50 = df_hist['Close'].rolling(window=50).mean().iloc[-1]
                 sma_200 = df_hist['Close'].rolling(window=200).mean().iloc[-1]
                 current_price = df_hist['Close'].iloc[-1]
                 
-                # Live-Preis & Bid/Ask
+                # Live-Preis
                 live_price = stock.info.get('currentPrice') or current_price
                 bid = stock.info.get('bid')
                 ask = stock.info.get('ask')
-                
                 prev_close = stock.info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((live_price - prev_close) / prev_close) * 100
                 
                 # Trend-Signal
                 lookback = 10
+                recent_50 = df_hist['Close'].rolling(window=50).mean().iloc[-lookback:]
+                recent_200 = df_hist['Close'].rolling(window=200).mean().iloc[-lookback:]
                 trend_signal = "Neutral"
                 
                 if sma_50 > sma_200:
-                    trend_signal = "📈 Aufwärtstrend" # Vereinfacht
+                    if (recent_50 < recent_200).any(): trend_signal = "✨ GOLDENES KREUZ (Neu)"
+                    else: trend_signal = "📈 Aufwärtstrend"
                 elif sma_50 < sma_200:
-                    trend_signal = "📉 Abwärtstrend"
+                    if (recent_50 > recent_200).any(): trend_signal = "💀 Todeskreuz (Neu)"
+                    else: trend_signal = "📉 Abwärtstrend"
                 
                 dist_200 = ((current_price - sma_200) / sma_200) * 100
                 dist_50 = ((current_price - sma_50) / sma_50) * 100
@@ -140,19 +136,15 @@ if should_scan:
                 info = stock.info
                 name = info.get('shortName') or info.get('longName') or ticker
                 currency = info.get('currency', '?')
+                
+                # ZIELE & WACHSTUM
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
                 
-                # WACHSTUM (Umsatz & Gewinn)
                 rev_growth = info.get('revenueGrowth', 0) 
-                earn_growth = info.get('earningsGrowth', 0)
+                earn_growth = info.get('earningsGrowth', 0) # Gewinn-Wachstum holen
                 peg_ratio = info.get('pegRatio') or info.get('trailingPegRatio')
                 
-                try:
-                    last_q_profit = stock.quarterly_financials.loc['Net Income'].iloc[0] / 1_000_000
-                except:
-                    last_q_profit = None
-
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
                 if upside < 0: status = "Überbewertet"
 
@@ -160,36 +152,40 @@ if should_scan:
                     peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
                     if peg_ratio is None and info.get('forwardPE', -1) < 0: peg_display = "Verlust"
                     
-                    # Wachstum formatieren
-                    growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
-                    earn_growth_display = f"{round(earn_growth * 100, 2)}%" if earn_growth else "N/A"
+                    # Formatierung: Alles auf 1 Dezimalstelle
+                    growth_display = f"{round(rev_growth * 100, 1)}%" if rev_growth else "N/A"
+                    earn_growth_display = f"{round(earn_growth * 100, 1)}%" if earn_growth else "N/A"
+                    
+                    target_display = f"{round(target, 2)} {currency}" if target else "N/A"
                     
                     trend_sign = "+" if change_pct > 0 else ""
                     bid_display = f"{round(bid, 2)}" if bid else "-"
                     ask_display = f"{round(ask, 2)}" if ask else "-"
+                    d50_sign = "+" if dist_50 > 0 else ""
+                    d200_sign = "+" if dist_200 > 0 else ""
 
                     temp_results.append({
                         "Name": name, 
-                        "Kürzel": ticker, 
                         "Kurs": f"{round(live_price, 2)} {currency}",
+                        "Analysten-Ziel": target_display, # NEU: Ziel-Preis
+                        "Potenzial %": round(upside, 1), # NEU: Abweichung in %
                         "Tages-Trend": f"{trend_sign}{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
-                        "Umsatz-Wachst.": growth_display, # Gefärbt
-                        "Gewinn-Wachst.": earn_growth_display, # Neu & Gefärbt
+                        "Trend-Signal": trend_signal,
+                        "Umsatz-Wachst.": growth_display, 
+                        "Gewinn-Wachst.": earn_growth_display, # NEU: Gewinn-Wachstum
                         "PEG": peg_display,
-                        "Erw. Gewinn (%)": round(upside, 1), 
-                        "Bewertung": status
+                        "Bewertung": status,
+                        # Versteckte Spalten für Sortierung/Logik
+                        "Abst. SMA50": f"{d50_sign}{round(dist_50, 1)}%",
+                        "Abst. SMA200": f"{d200_sign}{round(dist_200, 1)}%",
                     })
                     
-                    try:
-                        temp_news[ticker] = stock.news[:3] if stock.news else []
-                    except:
-                        temp_news[ticker] = []
-        except Exception:
-            continue
+                    try: temp_news[ticker] = stock.news[:3] if stock.news else []
+                    except: temp_news[ticker] = []
+        except Exception: continue
         
-        if not auto_refresh:
-            progress_bar.progress((i + 1) / total_tickers)
+        if not auto_refresh: progress_bar.progress((i + 1) / total_tickers)
             
     if not auto_refresh:
         status_text.empty()
@@ -205,27 +201,32 @@ if st.session_state['scan_results']:
     news_data = st.session_state['scan_news']
     last_up = st.session_state['last_update']
     
-    if auto_refresh:
-        st.markdown(f"🟢 **Live-Modus aktiv** | Zuletzt aktualisiert: **{last_up}**")
-    else:
-        st.markdown(f"⚪ Manueller Modus | Stand: **{last_up}**")
+    if auto_refresh: st.markdown(f"🟢 **Live-Modus aktiv** | Zuletzt aktualisiert: **{last_up}**")
+    else: st.markdown(f"⚪ Manueller Modus | Stand: **{last_up}**")
 
     st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
     df_res = pd.DataFrame(results)
     
-    # Styling Funktionen
+    # Styling
     def style_percent_color(val):
         if isinstance(val, str) and "%" in val:
             try:
-                clean_val = val.replace('%', '').replace('+', '').strip()
-                num = float(clean_val)
+                num = float(val.replace('%', '').replace('+', '').strip())
                 return 'color: green' if num > 0 else 'color: red'
-            except:
-                return ''
+            except: return ''
+        # Für Float-Werte (wie Potenzial %)
+        if isinstance(val, (int, float)):
+            return 'color: green' if val > 0 else 'color: red'
         return ''
 
-    def highlight_valuation(val):
-        return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
+    def style_trend(val):
+        if "GOLDENES" in str(val): return 'color: #006400; font-weight: bold; background-color: #e6ffe6' 
+        if "Todeskreuz" in str(val): return 'color: red; font-weight: bold'
+        if "Aufwärtstrend" in str(val): return 'color: green'
+        if "Abwärtstrend" in str(val): return 'color: red'
+        return ''
+        
+    def highlight_valuation(val): return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
     def style_rsi(val):
         try:
             if float(val) < 30: return 'color: green; font-weight: bold'
@@ -240,68 +241,64 @@ if st.session_state['scan_results']:
         except: pass
         return ''
 
-    # Styling anwenden (Auch auf die Wachstums-Spalten)
-    st.dataframe(df_res.style
+    # Spaltenauswahl für die Anzeige (Wichtigste zuerst)
+    display_cols = ["Name", "Kurs", "Analysten-Ziel", "Potenzial %", "Tages-Trend", "RSI (14)", "Trend-Signal", "Umsatz-Wachst.", "Gewinn-Wachst.", "PEG", "Bewertung"]
+    
+    st.dataframe(df_res[display_cols].style
+                    .applymap(style_trend, subset=['Trend-Signal'])
                     .applymap(highlight_valuation, subset=['Bewertung'])
                     .applymap(style_rsi, subset=['RSI (14)'])
                     .applymap(style_peg, subset=['PEG'])
-                    .applymap(style_percent_color, subset=['Tages-Trend', 'Umsatz-Wachst.', 'Gewinn-Wachst.']), 
+                    .applymap(style_percent_color, subset=['Tages-Trend', 'Umsatz-Wachst.', 'Gewinn-Wachst.', 'Potenzial %']), 
                     use_container_width=True)
     
-    # --- CHART-ANALYSE ---
+    # Chart & News
     st.divider()
-    st.subheader("📉 Profi-Chart")
+    col_chart, col_news = st.columns([2, 1])
     
-    selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
-                                    [r['Kürzel'] for r in results])
-    
-    if selected_ticker:
-        st.write(f"### Analyse: {selected_ticker}")
-        chart_stock = yf.Ticker(selected_ticker)
-        chart_df = chart_stock.history(period="2y")
+    with col_chart:
+        st.subheader("📉 Profi-Chart")
+        ticker_list = [r['Kürzel'] for r in results] if results else []
+        # Wir müssen den Index des ausgewählten Tickers finden oder Default 0 nehmen
+        selected_ticker = st.selectbox("Aktie auswählen:", ticker_list) if ticker_list else None
         
-        if not chart_df.empty:
-            chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
-            chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
-            chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
-            chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
-            chart_df['Trend (SMA 200)'] = chart_df['Close'].rolling(window=200).mean()
-            chart_df['Trend (SMA 50)'] = chart_df['Close'].rolling(window=50).mean()
-            
-            plot_df = chart_df.iloc[-250:].copy()
-            st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
-            st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig).")
-
-            delta = chart_df['Close'].diff()
-            gain = delta.where(delta > 0, 0)
-            loss = -delta.where(delta < 0, 0)
-            avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
-            avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
-            chart_df['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
-            
-            rsi_plot = chart_df.iloc[-250:].copy()
-            rsi_plot['Overbought'] = 70
-            rsi_plot['Oversold'] = 30
-            st.line_chart(rsi_plot[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
-
-    st.divider()
-    st.subheader("📰 Nachrichten-Ticker")
-    for ticker in news_data:
-        display_name = ticker
-        for wkn, t in WKN_MAP.items():
-            if t == ticker and len(wkn) == 6: display_name = f"{wkn} ({ticker})"
+        if selected_ticker:
+            chart_stock = yf.Ticker(selected_ticker)
+            chart_df = chart_stock.history(period="2y")
+            if not chart_df.empty:
+                chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
+                chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
+                chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
+                chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
+                chart_df['SMA 200'] = chart_df['Close'].rolling(window=200).mean()
+                chart_df['SMA 50'] = chart_df['Close'].rolling(window=50).mean()
                 
-        with st.expander(f"Infos zu {display_name}"):
-            articles = news_data.get(ticker, [])
-            if articles:
-                for item in articles:
-                    t = item.get('title') or "News"
-                    l = item.get('link') or f"https://de.finance.yahoo.com/quote/{ticker}"
-                    pub = item.get('publisher') or "Yahoo"
-                    st.markdown(f"**[{t}]({l})**")
-                    st.caption(f"Quelle: {pub}")
-            else:
-                st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
+                plot_df = chart_df.iloc[-250:].copy()
+                st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'SMA 200', 'SMA 50']])
+                
+                delta = chart_df['Close'].diff()
+                gain = delta.where(delta > 0, 0)
+                loss = -delta.where(delta < 0, 0)
+                avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+                avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+                rsi_plot = chart_df.iloc[-250:].copy()
+                rsi_plot['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+                rsi_plot['70'] = 70
+                rsi_plot['30'] = 30
+                st.line_chart(rsi_plot[['RSI', '70', '30']], color=["#0000FF", "#FF0000", "#00FF00"])
+
+    with col_news:
+        st.subheader("📰 News")
+        if news_data:
+            for ticker, articles in news_data.items():
+                if ticker == selected_ticker: # Nur News zur ausgewählten Aktie zeigen
+                    if articles:
+                        for item in articles:
+                            t = item.get('title') or "News"
+                            l = item.get('link') or f"https://de.finance.yahoo.com/quote/{ticker}"
+                            st.markdown(f"• [{t}]({l})")
+                    else:
+                        st.info("Keine News.")
 
 # AUTO REFRESH LOOP
 if auto_refresh:
