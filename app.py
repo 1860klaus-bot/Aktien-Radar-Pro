@@ -9,20 +9,25 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. FIREBASE INITIALISIERUNG (Fix für "Speicher nicht verfügbar") ---
+# --- 1. FIREBASE INITIALISIERUNG (Optimiert & Robust) ---
 @st.cache_resource
 def get_db_connection():
-    """Initialisiert Firebase stabil und extrahiert die Projekt-ID explizit."""
+    """Initialisiert die Firebase-Verbindung mit verbesserter Fehlerdiagnose."""
     if not firebase_admin._apps:
         try:
-            # Versuche Konfiguration aus Globals zu lesen (Canvas Umgebung)
-            config_str = globals().get("__firebase_config")
-            if config_str:
-                config = json.loads(config_str)
-                # Projekt-ID ist für Firestore zwingend erforderlich
+            config = None
+            # 1. Versuch: Gemini Canvas Umgebungsvariablen
+            if "__firebase_config" in globals():
+                config = json.loads(globals()["__firebase_config"])
+            # 2. Versuch: Streamlit Secrets (für externes Hosting)
+            elif "firebase" in st.secrets:
+                config = dict(st.secrets["firebase"])
+            
+            if config:
                 project_id = config.get('project_id') or config.get('projectId')
                 cred = credentials.Certificate(config)
                 
+                # App initialisieren
                 if project_id:
                     firebase_admin.initialize_app(cred, {'projectId': project_id})
                     return firestore.client(project=project_id)
@@ -30,52 +35,44 @@ def get_db_connection():
                     firebase_admin.initialize_app(cred)
                     return firestore.client()
             else:
-                # Fallback für lokale Entwicklung
-                try:
-                    firebase_admin.initialize_app()
-                    return firestore.client()
-                except:
-                    return None
+                # Keine Konfiguration gefunden
+                st.sidebar.warning("⚠️ Keine Firebase-Konfiguration gefunden. Cloud-Speicher deaktiviert.")
+                return None
         except Exception as e:
-            # Zeige den genauen Fehler in der Sidebar zur Diagnose
-            st.sidebar.error(f"Datenbank-Verbindungsfehler: {e}")
+            st.sidebar.error(f"❌ Datenbank-Fehler: {str(e)}")
             return None
     else:
-        # Wenn die App bereits initialisiert ist, hole den Client
+        # App ist bereits initialisiert, Client zurückgeben
         try:
-            config_str = globals().get("__firebase_config")
-            if config_str:
-                config = json.loads(config_str)
-                pid = config.get('project_id') or config.get('projectId')
-                return firestore.client(project=pid)
             return firestore.client()
         except:
             return None
 
-# Globale Variablen für DB und Identifikation
+# Globale Variablen initialisieren
 db = get_db_connection()
 app_id = globals().get("__app_id", "default-app-id")
-user_id = "default_user" # Standard-Nutzer für diese Umgebung
+user_id = "default_user"
 
 # --- 2. PERSISTENZ-FUNKTIONEN ---
 def save_favorites_to_db(ticker_string):
-    """Speichert die Favoriten-Liste in der Cloud."""
+    """Speichert die Favoriten-Liste dauerhaft in der Cloud."""
     if not db: 
-        st.sidebar.error("Cloud-Speicher nicht verfügbar. (Verbindung fehlgeschlagen)")
+        st.sidebar.error("Cloud-Speicher nicht verfügbar. Bitte Seite neu laden oder Verbindung prüfen.")
         return
     try:
-        # Pfad gemäß Regel 1: /artifacts/{appId}/users/{userId}/settings/favorites
+        # Pfad gemäß Regel 1: /artifacts/{appId}/users/{userId}/{collectionName}
+        # Wir nutzen 'settings' als Collection und 'favorites' als Dokument
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc_ref.set({
             "list": ticker_string,
             "updated_at": datetime.now()
         })
-        st.sidebar.success("✅ Favoriten in der Cloud gespeichert!")
+        st.sidebar.success("✅ Favoriten erfolgreich gespeichert!")
     except Exception as e:
         st.sidebar.error(f"Fehler beim Speichern: {e}")
 
 def load_favorites_from_db():
-    """Lädt die Favoriten-Liste aus der Cloud."""
+    """Lädt die Favoriten-Liste beim App-Start."""
     default_favs = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
     if not db: return default_favs
     try:
@@ -83,7 +80,8 @@ def load_favorites_from_db():
         doc = doc_ref.get()
         if doc.exists:
             return doc.to_dict().get("list", default_favs)
-    except: pass
+    except:
+        pass
     return default_favs
 
 # --- 3. DATEN-LISTEN ---
@@ -136,6 +134,11 @@ def format_curr(val):
 
 # --- 5. SIDEBAR ---
 st.sidebar.header("⚙️ Menü")
+
+if db:
+    st.sidebar.caption("🟢 Cloud-Speicher verbunden")
+else:
+    st.sidebar.caption("🔴 Cloud-Speicher offline")
 
 with st.sidebar.expander("📊 Indizes laden", expanded=False):
     if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
