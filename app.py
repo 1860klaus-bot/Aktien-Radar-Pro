@@ -40,20 +40,17 @@ WKN_MAP = {
 def get_google_news(query_term):
     """Holt echte Nachrichten via Google News RSS"""
     try:
-        # Wir suchen nach "Unternehmensname Aktie" auf Google News Deutschland
-        search_query = urllib.parse.quote(f"{query_term} Aktie")
+        # Wir suchen spezifisch auf Google News Deutschland
+        search_query = urllib.parse.quote(query_term)
         rss_url = f"https://news.google.com/rss/search?q={search_query}&hl=de&gl=DE&ceid=DE:de"
         
         feed = feedparser.parse(rss_url)
         news_items = []
         
-        # Die Top 5 Nachrichten extrahieren
         for entry in feed.entries[:5]: 
             pub_date = entry.published if hasattr(entry, 'published') else ""
-            # Datum kürzen (Alles nach dem Jahr weg, z.B. "Tue, 17 Feb 2026")
-            if len(pub_date) > 16: 
-                pub_date = pub_date[:16]
-                
+            if len(pub_date) > 16: pub_date = pub_date[:16]
+            
             news_items.append({
                 'title': entry.title,
                 'link': entry.link,
@@ -95,6 +92,10 @@ ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", val
 st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=False)
+
+# NEU: EXPERTEN SECTION
+st.sidebar.header("4. Experten-Radar")
+show_schmale = st.sidebar.checkbox("📰 Clemens Schmale News", value=False)
 
 # --- 3. HAUPTPROGRAMM ---
 
@@ -140,14 +141,12 @@ if should_scan:
                 sma_200 = df_hist['Close'].rolling(window=200).mean().iloc[-1]
                 current_price = df_hist['Close'].iloc[-1]
                 
-                # Live-Preis
                 live_price = stock.info.get('currentPrice') or current_price
                 bid = stock.info.get('bid')
                 ask = stock.info.get('ask')
                 prev_close = stock.info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((live_price - prev_close) / prev_close) * 100
                 
-                # Trend-Signal
                 lookback = 10
                 recent_50 = df_hist['Close'].rolling(window=50).mean().iloc[-lookback:]
                 recent_200 = df_hist['Close'].rolling(window=200).mean().iloc[-lookback:]
@@ -163,12 +162,10 @@ if should_scan:
                 dist_200 = ((current_price - sma_200) / sma_200) * 100
                 dist_50 = ((current_price - sma_50) / sma_50) * 100
                 
-                # Fundamentaldaten
                 info = stock.info
                 name = info.get('shortName') or info.get('longName') or ticker
                 currency = info.get('currency', '?')
                 
-                # Namen bereinigen für Google News
                 clean_name = name.replace(" Inc.", "").replace(" Corporation", "").replace(" SE", "").replace(" AG", "").split(" ")[0]
                 
                 target = info.get('targetMeanPrice', 0)
@@ -204,12 +201,11 @@ if should_scan:
                         "PEG": peg_display, "Bewertung": status,
                         "Abst. SMA50": f"{d50_sign}{round(dist_50, 1)}%",
                         "Abst. SMA200": f"{d200_sign}{round(dist_200, 1)}%",
-                        "Bid (VK)": bid_display, 
-                        "Ask (Kauf)": ask_display
+                        "Bid (VK)": bid_display, "Ask (Kauf)": ask_display
                     })
                     
-                    # --- NEWS ABFRAGE VIA GOOGLE ---
-                    temp_news[ticker] = get_google_news(clean_name)
+                    # --- NEWS ABFRAGE (Aktie) ---
+                    temp_news[ticker] = get_google_news(f"{clean_name} Aktie")
                     
         except Exception: continue
         
@@ -235,7 +231,6 @@ if st.session_state['scan_results']:
     st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
     df_res = pd.DataFrame(results)
     
-    # Styling
     def style_percent_color(val):
         if isinstance(val, str) and "%" in val:
             try:
@@ -251,7 +246,6 @@ if st.session_state['scan_results']:
         if "Aufwärtstrend" in str(val): return 'color: green'
         if "Abwärtstrend" in str(val): return 'color: red'
         return ''
-        
     def highlight_valuation(val): return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
     def style_rsi(val):
         try:
@@ -277,7 +271,6 @@ if st.session_state['scan_results']:
                     .applymap(style_percent_color, subset=['Tages-Trend', 'Umsatz-Wachst.', 'Gewinn-Wachst.', 'Potenzial %']), 
                     use_container_width=True)
     
-    # --- CHART-ANALYSE ---
     st.divider()
     st.subheader("📉 Profi-Chart")
     ticker_list = [r['Kürzel'] for r in results] if results else []
@@ -307,15 +300,26 @@ if st.session_state['scan_results']:
             rsi_plot['30'] = 30
             st.line_chart(rsi_plot[['RSI', '70', '30']], color=["#0000FF", "#FF0000", "#00FF00"])
 
-    # --- NEWS (Google News) ---
     st.divider()
     st.subheader("📰 Google News Ticker")
+    
+    # --- EXPERTEN NEWS ANZEIGEN ---
+    if show_schmale:
+        st.info("📢 **Extra: Nachrichten von Clemens Schmale / Aktionär**")
+        expert_news = get_google_news("Clemens Schmale Aktionär")
+        if expert_news:
+            for item in expert_news:
+                st.markdown(f"• **[{item['title']}]({item['link']})** ({item['published']})")
+        else:
+            st.caption("Keine spezifischen Nachrichten zu Clemens Schmale gefunden.")
+        st.divider()
+
+    # --- NORMALE AKTIEN NEWS ---
     if news_data and selected_ticker:
         articles = news_data.get(selected_ticker, [])
         if articles:
             for item in articles:
-                # Datum schön formatieren falls vorhanden
-                pub_date = item.get('published', '')[:16] # Schneidet lange Datum-Strings ab
+                pub_date = item.get('published', '')
                 st.markdown(f"• **[{item['title']}]({item['link']})**")
                 st.caption(f"{item['publisher']} | {pub_date}")
         else:
