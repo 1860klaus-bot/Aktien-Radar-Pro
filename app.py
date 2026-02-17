@@ -7,13 +7,17 @@ import urllib.parse
 from datetime import datetime
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (News & Experten)")
+st.title("💎 Aktien-Radar: Global (Experten-Portfolios & News)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
 US_TECH_LISTE = "865985, 870747, 906866, A1CX3T, 918422, A14Y6F, A1JWVX, 552484, A14R7U, A1J5X3, A2QP7J, 851399"
 GLOBAL_TOP_LISTE = "865985, 870747, 918422, 716460, 723610, 840400, 850663, 856958, A0M240, 850517"
 FAVORITEN_LISTE = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE, LHA.DE, 865985"
+
+# EXPERTEN PORTFOLIOS (Top-Werte Simulation)
+HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT" # Typische High-Tech-Investing Werte
+SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW" # Typische Data-Driven Werte
 
 WKN_MAP = {
     # DAX
@@ -33,40 +37,36 @@ WKN_MAP = {
     "A1J5X3": "ANGI", "ANGI": "ANGI", "A2QP7J": "GME", "GAMESTOP": "GME", "A0F5UF": "PLTR", "PALANTIR": "PLTR",
     "A2QP7J": "COIN", "COINBASE": "COIN", "863186": "AMD", "AMD": "AMD", "850663": "KO", "COCA COLA": "KO",
     "856958": "MCD", "MCDONALDS": "MCD", "A0M240": "V", "VISA": "V", "851399": "IBM", "IBM": "IBM",
-    "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
+    "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B",
+    "A2QJVE": "NU",   "NU HOLDINGS": "NU", "A2N6LE": "CRWD", "CROWDSTRIKE": "CRWD", "A12G4R": "HUBS", "HUBSPOT": "HUBS"
 }
 
 # --- HELPER: NEWS FETCH ---
 def get_google_news(query_term):
-    """Holt Nachrichten via Google News RSS"""
     try:
         search_query = urllib.parse.quote(f"{query_term} Aktie")
         rss_url = f"https://news.google.com/rss/search?q={search_query}&hl=de&gl=DE&ceid=DE:de"
         feed = feedparser.parse(rss_url)
         news_items = []
         for entry in feed.entries[:3]: 
-            pub_date = entry.published if hasattr(entry, 'published') else ""
-            if len(pub_date) > 16: pub_date = pub_date[:16]
+            pub_date = entry.published[:16] if hasattr(entry, 'published') else ""
             news_items.append({'title': entry.title, 'link': entry.link, 'publisher': entry.source.title, 'published': pub_date})
         return news_items
     except: return []
 
 def get_rss_feed(rss_url):
-    """Holt Nachrichten von Substack/Blogs via RSS"""
     try:
         feed = feedparser.parse(rss_url)
         news_items = []
-        for entry in feed.entries[:5]:
+        for entry in feed.entries[:3]:
             pub_date = entry.published[:16] if hasattr(entry, 'published') else ""
             news_items.append({'title': entry.title, 'link': entry.link, 'published': pub_date})
         return news_items
     except: return []
 
-# --- 2. SEITENLEISTE MIT LOGIK ---
+# --- 2. SEITENLEISTE ---
 st.sidebar.header("1. Listen laden")
-if 'ticker_text' not in st.session_state:
-    st.session_state['ticker_text'] = FAVORITEN_LISTE
-
+if 'ticker_text' not in st.session_state: st.session_state['ticker_text'] = FAVORITEN_LISTE
 if 'scan_results' not in st.session_state: st.session_state['scan_results'] = None
 if 'scan_news' not in st.session_state: st.session_state['scan_news'] = {}
 if 'last_update' not in st.session_state: st.session_state['last_update'] = None
@@ -79,20 +79,30 @@ with col2:
 
 col3, col4 = st.sidebar.columns(2)
 with col3:
-    if st.button("🌍 Global Top"): st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
+    if st.button("🌍 Global"): st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
 with col4:
     if st.button("⭐ Favoriten"): st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-st.sidebar.header("2. Manuelle Eingabe")
+st.sidebar.header("2. Eingabe")
 ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", value=st.session_state['ticker_text'], height=150)
 
 st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
-auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=False)
+auto_refresh = st.sidebar.toggle("⏱️ Live-Modus", value=False)
 
-# EXPERTEN SEKTION
-st.sidebar.header("4. Experten-Radar")
-show_experts = st.sidebar.checkbox("🧠 Experten (Substack & Wiki)", value=True)
+# NEU: EXPERTEN SEKTION IN SIDEBAR
+st.sidebar.divider()
+st.sidebar.header("4. Experten-Portfolios")
+show_experts = st.sidebar.checkbox("🧠 Experten-News anzeigen", value=True)
+
+# Buttons um Portfolios direkt in den Scanner zu laden
+st.sidebar.caption("Lade Top-Werte der Experten:")
+if st.sidebar.button("📥 HGI Portfolio laden"):
+    st.session_state['ticker_text'] = HGI_PORTFOLIO
+    st.rerun()
+if st.sidebar.button("📥 Szew Portfolio laden"):
+    st.session_state['ticker_text'] = SZEW_PORTFOLIO
+    st.rerun()
 
 # --- 3. HAUPTPROGRAMM ---
 
@@ -288,55 +298,30 @@ if st.session_state['scan_results']:
             rsi_plot['30'] = 30
             st.line_chart(rsi_plot[['RSI', '70', '30']], color=["#0000FF", "#FF0000", "#00FF00"])
 
-    # --- EXPERTEN SECTION (SUBSTACK & WIKI) ---
+    # --- EXPERTEN (Substack & Wiki Buttons) ---
     if show_experts:
         st.divider()
-        st.subheader("🧠 Experten-Briefing (Substack & Wikifolio)")
+        st.subheader("🧠 Experten-Briefing")
         
         col1, col2 = st.columns(2)
-        
         with col1:
             st.info("📊 **Stefan Waldhauser (HGI)**")
-            st.markdown("High-Growth-Investing Strategie")
-            
-            # Buttons für Direktzugriff
             c1, c2 = st.columns(2)
-            with c1:
-                st.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00000hgi")
-            with c2:
-                st.link_button("📝 Zum Blog/Substack", "https://high-tech-investing.de")
-
-            st.write("**Neueste Artikel (RSS):**")
-            # Feed von High-Tech-Investing
+            c1.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00000hgi")
+            c2.link_button("📝 Zum Blog", "https://high-tech-investing.de")
             wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
             if wh_news:
-                for item in wh_news:
-                    st.markdown(f"• [{item['title']}]({item['link']})")
-            else:
-                st.caption("Keine neuen Artikel geladen.")
+                for item in wh_news: st.markdown(f"• [{item['title']}]({item['link']})")
 
         with col2:
-            st.info("🐻 **Mateusz Szewczyk (Szew)**")
-            st.markdown("Data-Driven Tech Investing")
-            
-            # Buttons
+            st.info("🐻 **Szew (Mateusz Szewczyk)**")
             c3, c4 = st.columns(2)
-            with c3:
-                # Link zum Haupt-Wikifolio "Data Driven Tech"
-                st.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf000szew1")
-            with c4:
-                st.link_button("📝 Zum Substack", "https://szew.substack.com")
-
-            st.write("**Neueste Substack-Artikel:**")
-            # Feed von Szew Substack
+            c3.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf000szew1")
+            c4.link_button("📝 Zum Substack", "https://szew.substack.com")
             sz_news = get_rss_feed("https://szew.substack.com/feed")
             if sz_news:
-                for item in sz_news:
-                    st.markdown(f"• [{item['title']}]({item['link']})")
-            else:
-                st.caption("Keine Artikel geladen.")
+                for item in sz_news: st.markdown(f"• [{item['title']}]({item['link']})")
 
-    # --- AKTIEN NEWS ---
     st.divider()
     st.subheader("📰 News zur ausgewählten Aktie")
     if news_data and selected_ticker:
