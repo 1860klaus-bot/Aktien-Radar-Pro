@@ -56,12 +56,19 @@ def color_negative_red_positive_green(val):
         return ''
 
 def color_rsi(val):
-    """RSI Farbskala: Grün für unter 35 (Kaufzone), Rot für über 70 (Verkaufszone)"""
+    """RSI Farbskala"""
     try:
         color = 'lightgreen' if val <= 35 else 'tomato' if val >= 70 else 'white'
         return f'background-color: {color}; color: black' if color != 'white' else ''
     except:
         return ''
+
+def color_valuation(val):
+    """Farbliche Markierung der Bewertung"""
+    if val == "Unterbewertet": return 'background-color: #006400; color: white'
+    if val == "Günstig": return 'background-color: #90EE90; color: black'
+    if val == "Überbewertet": return 'background-color: #8B0000; color: white'
+    return ''
 
 # --- 4. SEITENLEISTE (UI & LOGIK) ---
 st.sidebar.header("📂 Portfolios & Listen")
@@ -115,11 +122,20 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
                     prev_c = info.get('previousClose', price)
                     day_change = ((price - prev_c) / prev_c) * 100
                     
-                    # Kennzahlen für Umsatz und Gewinn
                     rev_growth = info.get('revenueGrowth', 0)
                     earn_growth = info.get('earningsGrowth', 0)
+                    peg = info.get('pegRatio')
                     target = info.get('targetMeanPrice')
                     potential = ((target - price) / price) * 100 if target else 0
+                    
+                    # Logik für Bewertung
+                    bewertung = "Neutral"
+                    if peg:
+                        if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
+                        elif peg < 1.5 and rsi_val < 40: bewertung = "Günstig"
+                        elif peg > 2.5 or rsi_val > 75: bewertung = "Überbewertet"
+                    elif potential > 30 and rsi_val < 45: 
+                        bewertung = "Unterbewertet"
                     
                     scan_results.append({
                         "Name": info.get('shortName', sym),
@@ -127,10 +143,11 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
                         "Kurs": round(price, 2),
                         "Heute %": round(day_change, 2),
                         "RSI": round(rsi_val, 1),
-                        "Umsatz-Wachstum %": round(rev_growth * 100, 1) if rev_growth else 0,
-                        "Gewinn-Wachstum %": round(earn_growth * 100, 1) if earn_growth else 0,
-                        "PEG": info.get('pegRatio', '-'),
-                        "Potential %": round(potential, 1) if target else 0
+                        "Umsatz-Wachst. %": round(rev_growth * 100, 1) if rev_growth else 0,
+                        "Gewinn-Wachst. %": round(earn_growth * 100, 1) if earn_growth else 0,
+                        "PEG": round(peg, 2) if peg else "-",
+                        "Potential %": round(potential, 1) if target else 0,
+                        "Bewertung": bewertung
                     })
         except: pass
         prog_bar.progress((i + 1) / len(symbols))
@@ -146,14 +163,17 @@ if st.session_state.scan_results:
     # Styling der Tabelle
     styled_df = df_results.style.applymap(
         color_negative_red_positive_green, 
-        subset=['Heute %', 'Umsatz-Wachstum %', 'Gewinn-Wachstum %', 'Potential %']
+        subset=['Heute %', 'Umsatz-Wachst. %', 'Gewinn-Wachst. %', 'Potential %']
     ).applymap(
         color_rsi, 
         subset=['RSI']
+    ).applymap(
+        color_valuation, 
+        subset=['Bewertung']
     ).format({
         "Heute %": "{:+.2f}%",
-        "Umsatz-Wachstum %": "{:+.1f}%",
-        "Gewinn-Wachstum %": "{:+.1f}%",
+        "Umsatz-Wachst. %": "{:+.1f}%",
+        "Gewinn-Wachst. %": "{:+.1f}%",
         "Potential %": "{:+.1f}%"
     })
     
