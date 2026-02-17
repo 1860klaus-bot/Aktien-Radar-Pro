@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import time
+from datetime import datetime
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
 st.title("💎 Aktien-Radar: Global (Live-Monitor)")
@@ -38,10 +39,13 @@ st.sidebar.header("1. Listen laden")
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
+# Initialisiere Session State
 if 'scan_results' not in st.session_state:
     st.session_state['scan_results'] = None
 if 'scan_news' not in st.session_state:
     st.session_state['scan_news'] = {}
+if 'last_update' not in st.session_state:
+    st.session_state['last_update'] = None
 
 col1, col2 = st.sidebar.columns(2)
 with col1:
@@ -60,13 +64,17 @@ ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", val
 
 st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
-auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Update)", value=False)
+auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=False)
 
 # --- 3. HAUPTPROGRAMM ---
 
+# Start-Button (oder Auto-Start wenn Toggle aktiv)
 start_scan = st.button("🚀 Scanner starten", type="primary")
 
-if start_scan or auto_refresh:
+# Logik: Wenn Button geklickt ODER Auto-Refresh an ist -> Scannen
+should_scan = start_scan or auto_refresh
+
+if should_scan:
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
     
@@ -77,9 +85,13 @@ if start_scan or auto_refresh:
     temp_results = []
     temp_news = {}
     
+    # Ladebalken nur anzeigen, wenn NICHT im Auto-Modus (verhindert Flackern)
     if not auto_refresh:
         progress_bar = st.progress(0)
         status_text = st.empty()
+    else:
+        # Im Live-Modus nur kleine Info
+        st.toast("Lade Live-Daten...", icon="🔄")
     
     total_tickers = len(tickers)
     
@@ -107,7 +119,7 @@ if start_scan or auto_refresh:
                 sma_200 = sma_200_series.iloc[-1]
                 current_price = df_hist['Close'].iloc[-1]
                 
-                # Live-Preis & Bid/Ask
+                # Live-Preis & Bid/Ask (Echtzeit-Daten bevorzugen)
                 live_price = stock.info.get('currentPrice') or current_price
                 bid = stock.info.get('bid')
                 ask = stock.info.get('ask')
@@ -115,7 +127,7 @@ if start_scan or auto_refresh:
                 prev_close = stock.info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((live_price - prev_close) / prev_close) * 100
                 
-                # Trend-Signal
+                # Trend-Signal (Frische-Check 10 Tage)
                 lookback = 10
                 recent_50 = sma_50_series.iloc[-lookback:]
                 recent_200 = sma_200_series.iloc[-lookback:]
@@ -158,7 +170,6 @@ if start_scan or auto_refresh:
                     d50_sign = "+" if dist_50 > 0 else ""
                     d200_sign = "+" if dist_200 > 0 else ""
                     
-                    # Formatierung für Bid/Ask
                     bid_display = f"{round(bid, 2)}" if bid else "-"
                     ask_display = f"{round(ask, 2)}" if ask else "-"
 
@@ -166,8 +177,8 @@ if start_scan or auto_refresh:
                         "Name": name, 
                         "Kürzel": ticker, 
                         "Kurs": f"{round(live_price, 2)} {currency}",
-                        "Bid (VK)": bid_display, # Neu
-                        "Ask (Kauf)": ask_display, # Neu
+                        "Bid (VK)": bid_display,
+                        "Ask (Kauf)": ask_display,
                         "Tages-Trend": f"{trend_sign}{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
                         "Trend-Signal": trend_signal,
@@ -193,28 +204,27 @@ if start_scan or auto_refresh:
         status_text.empty()
         progress_bar.empty()
     
+    # Ergebnisse speichern
     st.session_state['scan_results'] = temp_results
     st.session_state['scan_news'] = temp_news
-    
-    if auto_refresh:
-        with st.empty():
-            for seconds in range(60, 0, -1):
-                st.caption(f"⏳ Nächstes Update in {seconds} Sekunden...")
-                time.sleep(1)
-        st.rerun()
+    st.session_state['last_update'] = datetime.now().strftime("%H:%M:%S")
 
 # B) ANZEIGE
 if st.session_state['scan_results']:
     results = st.session_state['scan_results']
     news_data = st.session_state['scan_news']
+    last_up = st.session_state['last_update']
     
+    # Status-Anzeige oben rechts
     if auto_refresh:
-        st.success("🟢 Live-Modus aktiv: Daten aktualisieren sich automatisch.")
+        st.markdown(f"🟢 **Live-Modus aktiv** | Zuletzt aktualisiert: **{last_up}**")
+    else:
+        st.markdown(f"⚪ Manueller Modus | Stand: **{last_up}**")
 
     st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
     df_res = pd.DataFrame(results)
     
-    # Styling Funktionen
+    # Styling
     def style_percent_color(val):
         if isinstance(val, str) and "%" in val:
             try:
@@ -260,11 +270,11 @@ if st.session_state['scan_results']:
     st.divider()
     st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
     
+    # Checkbox, damit Chart nicht immer neu lädt
     selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
                                     [r['Kürzel'] for r in results])
     
     if selected_ticker:
-        st.write(f"### Analyse: {selected_ticker}")
         chart_stock = yf.Ticker(selected_ticker)
         chart_df = chart_stock.history(period="2y")
         
@@ -278,7 +288,7 @@ if st.session_state['scan_results']:
             
             plot_df = chart_df.iloc[-250:].copy()
             st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
-            st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig). Ein Kreuzen der Linien ist oft ein wichtiges Signal.")
+            st.caption(f"Chart für {selected_ticker}: SMA 200 (Langfristig) | SMA 50 (Mittelfristig).")
 
             delta = chart_df['Close'].diff()
             gain = delta.where(delta > 0, 0)
@@ -310,5 +320,8 @@ if st.session_state['scan_results']:
                     st.caption(f"Quelle: {pub}")
             else:
                 st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
-elif st.button("Erneut scannen um Ergebnisse zu laden"):
-    pass
+
+# AUTO REFRESH LOOP (Am Ende, damit Tabelle sichtbar bleibt)
+if auto_refresh:
+    time.sleep(60)
+    st.rerun()
