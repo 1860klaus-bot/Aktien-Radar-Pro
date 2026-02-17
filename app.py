@@ -107,8 +107,11 @@ if start_scan or auto_refresh:
                 sma_200 = sma_200_series.iloc[-1]
                 current_price = df_hist['Close'].iloc[-1]
                 
-                # Live-Preis & Tages-Veränderung
+                # Live-Preis & Bid/Ask
                 live_price = stock.info.get('currentPrice') or current_price
+                bid = stock.info.get('bid')
+                ask = stock.info.get('ask')
+                
                 prev_close = stock.info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((live_price - prev_close) / prev_close) * 100
                 
@@ -125,7 +128,6 @@ if start_scan or auto_refresh:
                     if (recent_50 > recent_200).any(): trend_signal = "💀 Todeskreuz (Neu)"
                     else: trend_signal = "📉 Abwärtstrend"
                 
-                # Abstände berechnen
                 dist_200 = ((current_price - sma_200) / sma_200) * 100
                 dist_50 = ((current_price - sma_50) / sma_50) * 100
                 
@@ -152,16 +154,21 @@ if start_scan or auto_refresh:
                     if peg_ratio is None and info.get('forwardPE', -1) < 0: peg_display = "Verlust"
                     growth_display = f"{round(rev_growth * 100, 2)}%" if rev_growth else "N/A"
                     
-                    # Vorzeichen für bessere Lesbarkeit hinzufügen
                     trend_sign = "+" if change_pct > 0 else ""
                     d50_sign = "+" if dist_50 > 0 else ""
                     d200_sign = "+" if dist_200 > 0 else ""
+                    
+                    # Formatierung für Bid/Ask
+                    bid_display = f"{round(bid, 2)}" if bid else "-"
+                    ask_display = f"{round(ask, 2)}" if ask else "-"
 
                     temp_results.append({
                         "Name": name, 
                         "Kürzel": ticker, 
                         "Kurs": f"{round(live_price, 2)} {currency}",
-                        "Tages-Trend": f"{trend_sign}{round(change_pct, 2)}%", # NEU: Mit Tages-Trend
+                        "Bid (VK)": bid_display, # Neu
+                        "Ask (Kauf)": ask_display, # Neu
+                        "Tages-Trend": f"{trend_sign}{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1),
                         "Trend-Signal": trend_signal,
                         "Abst. SMA50": f"{d50_sign}{round(dist_50, 1)}%",
@@ -209,10 +216,8 @@ if st.session_state['scan_results']:
     
     # Styling Funktionen
     def style_percent_color(val):
-        """Färbt Prozentwerte grün (plus) oder rot (minus)"""
         if isinstance(val, str) and "%" in val:
             try:
-                # Bereinigen für Float-Umwandlung
                 clean_val = val.replace('%', '').replace('+', '').strip()
                 num = float(clean_val)
                 return 'color: green' if num > 0 else 'color: red'
@@ -243,7 +248,6 @@ if st.session_state['scan_results']:
         except: pass
         return ''
 
-    # Anwenden der Styles auf alle relevanten Spalten
     st.dataframe(df_res.style
                     .applymap(style_trend, subset=['Trend-Signal'])
                     .applymap(highlight_valuation, subset=['Bewertung'])
