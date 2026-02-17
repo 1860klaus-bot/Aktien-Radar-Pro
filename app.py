@@ -1,9 +1,10 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import time  # Neu: Für die Zeitsteuerung
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (Smart Trend & WKN)")
+st.title("💎 Aktien-Radar: Global (Live-Monitor)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -37,7 +38,7 @@ st.sidebar.header("1. Listen laden")
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-# Initialisiere Session State für Ergebnisse
+# Initialisiere Session State
 if 'scan_results' not in st.session_state:
     st.session_state['scan_results'] = None
 if 'scan_news' not in st.session_state:
@@ -58,13 +59,19 @@ with col4:
 st.sidebar.header("2. Manuelle Eingabe")
 ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", value=st.session_state['ticker_text'], height=150)
 
-st.sidebar.header("3. Filter")
+st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
+
+# --- AUTO REFRESH SCHALTER ---
+auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Update)", value=False)
 
 # --- 3. HAUPTPROGRAMM ---
 
-# A) SCAN VORGANG
-if st.button("🚀 Scanner starten", type="primary"):
+# SCAN LOGIK: Startet wenn Button gedrückt ODER Auto-Refresh aktiv ist
+start_scan = st.button("🚀 Scanner starten", type="primary")
+
+if start_scan or auto_refresh:
+    
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
     
@@ -74,19 +81,24 @@ if st.button("🚀 Scanner starten", type="primary"):
             
     temp_results = []
     temp_news = {}
-    status_text = st.empty()
-    progress_bar = st.progress(0)
+    
+    # Progress Bar nur anzeigen, wenn manuell gestartet (weniger Flackern im Auto-Modus)
+    if not auto_refresh:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
     
     total_tickers = len(tickers)
     
     for i, ticker in enumerate(tickers):
-        status_text.text(f"Analysiere ({i+1}/{total_tickers}): {ticker}...")
+        if not auto_refresh:
+            status_text.text(f"Analysiere ({i+1}/{total_tickers}): {ticker}...")
+            
         try:
             stock = yf.Ticker(ticker)
             df_hist = stock.history(period="300d")
             
             if not df_hist.empty and len(df_hist) > 200:
-                # 1. RSI Berechnung
+                # RSI
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -94,37 +106,26 @@ if st.button("🚀 Scanner starten", type="primary"):
                 avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
                 rsi_val = 100 - (100 / (1 + (avg_gain / avg_loss))).iloc[-1]
                 
-                # 2. Golden Cross & Abstände
-                # Berechne die Gleitenden Durchschnitte
+                # Trends (SMA 50/200)
                 sma_50_series = df_hist['Close'].rolling(window=50).mean()
                 sma_200_series = df_hist['Close'].rolling(window=200).mean()
-                
-                # Aktuelle Werte
                 sma_50 = sma_50_series.iloc[-1]
                 sma_200 = sma_200_series.iloc[-1]
                 current_price = df_hist['Close'].iloc[-1]
                 
-                # Historie der letzten 10 Tage für "Frische"-Check
+                # Frische-Check (letzte 10 Tage)
                 lookback = 10
                 recent_50 = sma_50_series.iloc[-lookback:]
                 recent_200 = sma_200_series.iloc[-lookback:]
                 
                 trend_signal = "Neutral"
-                
-                # Prüfen: Ist aktuell Bullisch (50 > 200)?
                 if sma_50 > sma_200:
-                    if (recent_50 < recent_200).any():
-                        trend_signal = "✨ GOLDENES KREUZ (Neu)"
-                    else:
-                        trend_signal = "📈 Aufwärtstrend"
-                # Prüfen: Ist aktuell Bärisch (50 < 200)?
+                    if (recent_50 < recent_200).any(): trend_signal = "✨ GOLDENES KREUZ (Neu)"
+                    else: trend_signal = "📈 Aufwärtstrend"
                 elif sma_50 < sma_200:
-                    if (recent_50 > recent_200).any():
-                        trend_signal = "💀 Todeskreuz (Neu)"
-                    else:
-                        trend_signal = "📉 Abwärtstrend"
+                    if (recent_50 > recent_200).any(): trend_signal = "💀 Todeskreuz (Neu)"
+                    else: trend_signal = "📉 Abwärtstrend"
                 
-                # ABSTÄNDE BERECHNEN
                 dist_200 = ((current_price - sma_200) / sma_200) * 100
                 dist_50 = ((current_price - sma_50) / sma_50) * 100
                 
@@ -157,7 +158,7 @@ if st.button("🚀 Scanner starten", type="primary"):
                         "Kurs": f"{round(current_price, 2)} {currency}",
                         "RSI (14)": round(float(rsi_val), 1),
                         "Trend": trend_signal,
-                        "Abst. SMA50": f"{round(dist_50, 1)}%",  # NEU
+                        "Abst. SMA50": f"{round(dist_50, 1)}%",
                         "Abst. SMA200": f"{round(dist_200, 1)}%",
                         "Umsatz-Wachst.": growth_display, 
                         "PEG": peg_display,
@@ -171,19 +172,34 @@ if st.button("🚀 Scanner starten", type="primary"):
                         temp_news[ticker] = []
         except Exception:
             continue
-        progress_bar.progress((i + 1) / total_tickers)
+        
+        if not auto_refresh:
+            progress_bar.progress((i + 1) / total_tickers)
             
-    status_text.empty()
-    progress_bar.empty()
+    if not auto_refresh:
+        status_text.empty()
+        progress_bar.empty()
     
     st.session_state['scan_results'] = temp_results
     st.session_state['scan_news'] = temp_news
+    
+    # AUTO REFRESH LOOP
+    if auto_refresh:
+        with st.empty():
+            for seconds in range(60, 0, -1):
+                st.caption(f"⏳ Nächstes Update in {seconds} Sekunden...")
+                time.sleep(1)
+        st.rerun()
 
 # B) ANZEIGE
 if st.session_state['scan_results']:
     results = st.session_state['scan_results']
     news_data = st.session_state['scan_news']
     
+    # Kleiner Hinweis, wenn Live-Modus an ist
+    if auto_refresh:
+        st.success("🟢 Live-Modus aktiv: Daten aktualisieren sich automatisch.")
+
     st.subheader(f"🌍 Marktanalyse ({len(results)} Treffer)")
     df_res = pd.DataFrame(results)
     
@@ -194,7 +210,6 @@ if st.session_state['scan_results']:
         if "Aufwärtstrend" in str(val): return 'color: green'
         if "Abwärtstrend" in str(val): return 'color: red'
         return ''
-        
     def highlight_valuation(val):
         return 'background-color: #90EE90; color: black' if val == "Unterbewertet" else ''
     def style_rsi(val):
@@ -226,6 +241,7 @@ if st.session_state['scan_results']:
                                     [r['Kürzel'] for r in results])
     
     if selected_ticker:
+        # Chart wird nur neu geladen wenn nötig
         st.write(f"### Analyse: {selected_ticker}")
         chart_stock = yf.Ticker(selected_ticker)
         chart_df = chart_stock.history(period="2y")
