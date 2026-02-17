@@ -2,29 +2,29 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import time
-import feedparser
 import urllib.parse
 from datetime import datetime
+
+# --- 0. SICHERHEITS-CHECK FÜR MODULE ---
+try:
+    import feedparser
+except ImportError:
+    st.error("⚠️ ACHTUNG: Das Modul 'feedparser' fehlt! Bitte füge in deine `requirements.txt` auf GitHub das Wort `feedparser` hinzu.")
+    st.stop() # Stoppt die App hier, damit nichts abstürzt
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
 st.title("💎 Aktien-Radar: Global (News & Experten)")
 
-# --- 1. KONFIGURATION (HIER KANNST DU DEINE LISTEN ÄNDERN) ---
-
-# 🟢 HIER: Kopiere die aktuellen Aktien aus dem HGI-Wikifolio hier rein (Kommagetrennt):
+# --- 1. KONFIGURATION (LISTEN) ---
 HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT, DDOG" 
-
-# 🔵 HIER: Kopiere die aktuellen Aktien aus dem Szew-Wikifolio hier rein:
 SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW, SHOP"
 
-# Standard-Listen für die anderen Buttons
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
 US_TECH_LISTE = "865985, 870747, 906866, A1CX3T, 918422, A14Y6F, A1JWVX, 552484, A14R7U, A1J5X3, A2QP7J, 851399"
 GLOBAL_TOP_LISTE = "865985, 870747, 918422, 716460, 723610, 840400, 850663, 856958, A0M240, 850517"
 FAVORITEN_LISTE = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE, LHA.DE, 865985"
 
 WKN_MAP = {
-    # DAX
     "716460": "SAP.DE", "SAP": "SAP.DE", "723610": "SIE.DE", "SIEMENS": "SIE.DE", "840400": "ALV.DE", "ALLIANZ": "ALV.DE",
     "710000": "MBG.DE", "MERCEDES": "MBG.DE", "766403": "VOW3.DE", "VW": "VOW3.DE", "555750": "DTE.DE", "TELEKOM": "DTE.DE",
     "BASF11": "BAS.DE", "BASF": "BAS.DE", "BAY001": "BAYN.DE", "BAYER": "BAYN.DE", "519000": "BMW.DE", "BMW": "BMW.DE",
@@ -34,7 +34,6 @@ WKN_MAP = {
     "843002": "MUV2.DE", "MUENCHENER RUECK": "MUV2.DE", "PAG911": "P911.DE", "PORSCHE": "P911.DE", "703712": "RWE.DE", "RWE": "RWE.DE",
     "SHL100": "SHL.DE", "SIEMENS HEALTH": "SHL.DE", "A1ML7J": "VNA.DE", "VONOVIA": "VNA.DE", "938914": "AIR.DE", "AIRBUS": "AIR.DE",
     "703000": "RHM.DE", "RHEINMETALL": "RHM.DE", "TUAG50": "TUI1.DE", "TUI": "TUI1.DE", "823212": "LHA.DE", "LUFTHANSA": "LHA.DE",
-    # US & International
     "865985": "AAPL", "APPLE": "AAPL", "870747": "MSFT", "MICROSOFT": "MSFT", "906866": "AMZN", "AMAZON": "AMZN",
     "A1CX3T": "TSLA", "TESLA": "TSLA", "918422": "NVDA", "NVIDIA": "NVDA", "A14Y6F": "GOOGL", "ALPHABET": "GOOGL",
     "A1JWVX": "META", "META": "META", "552484": "NFLX", "NETFLIX": "NFLX", "A14R7U": "PYPL", "PAYPAL": "PYPL",
@@ -44,7 +43,7 @@ WKN_MAP = {
     "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
 }
 
-# --- HELPER: NEWS FETCH ---
+# --- HELPER FUNKTIONEN ---
 def get_google_news(query_term):
     try:
         search_query = urllib.parse.quote(f"{query_term} Aktie")
@@ -70,38 +69,24 @@ def get_rss_feed(rss_url):
 # --- 2. SEITENLEISTE ---
 st.sidebar.header("1. Listen laden")
 
-# Session State für das Textfeld initialisieren
+# Session State initialisieren (WICHTIG!)
 if 'ticker_text' not in st.session_state:
-    st.session_state.ticker_text = FAVORITEN_LISTE
+    st.session_state['ticker_text'] = FAVORITEN_LISTE
+if 'scan_results' not in st.session_state: st.session_state['scan_results'] = None
+if 'scan_news' not in st.session_state: st.session_state['scan_news'] = {}
+if 'last_update' not in st.session_state: st.session_state['last_update'] = None
 
-if 'scan_results' not in st.session_state: st.session_state.scan_results = None
-if 'scan_news' not in st.session_state: st.session_state.scan_news = {}
-if 'last_update' not in st.session_state: st.session_state.last_update = None
-
-# Buttons - Aktualisieren direkt den Session State
+# Buttons - Aktualisieren das Textfeld sofort
 col1, col2 = st.sidebar.columns(2)
-with col1:
-    if st.button("🇩🇪 DAX Liste"): 
-        st.session_state.ticker_text = DAX_LISTE
-with col2:
-    if st.button("🇺🇸 US Tech"): 
-        st.session_state.ticker_text = US_TECH_LISTE
+if col1.button("🇩🇪 DAX Liste"): st.session_state['ticker_text'] = DAX_LISTE
+if col2.button("🇺🇸 US Tech"): st.session_state['ticker_text'] = US_TECH_LISTE
 
 col3, col4 = st.sidebar.columns(2)
-with col3:
-    if st.button("🌍 Global"): 
-        st.session_state.ticker_text = GLOBAL_TOP_LISTE
-with col4:
-    if st.button("⭐ Favoriten"): 
-        st.session_state.ticker_text = FAVORITEN_LISTE
+if col3.button("🌍 Global"): st.session_state['ticker_text'] = GLOBAL_TOP_LISTE
+if col4.button("⭐ Favoriten"): st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-# Textfeld direkt an Session State binden
-st.sidebar.header("2. Eingabe")
-ticker_input = st.sidebar.text_area(
-    "Aktien-Liste (WKN, Name oder Kürzel)", 
-    key="ticker_text", # WICHTIG: Verbindet Feld mit Speicher
-    height=150
-)
+# Textfeld - Verknüpft mit Session State
+ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", key="ticker_text", height=150)
 
 st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
@@ -110,13 +95,11 @@ auto_refresh = st.sidebar.toggle("⏱️ Live-Modus", value=False)
 # EXPERTEN SEKTION
 st.sidebar.divider()
 st.sidebar.header("4. Experten-Portfolios")
-st.sidebar.caption("Lade die Top-Werte der Experten:")
-
 if st.sidebar.button("📥 HGI Portfolio laden"):
-    st.session_state.ticker_text = HGI_PORTFOLIO
-    st.rerun() # Erzwingt sofortiges Neuladen der Seite
+    st.session_state['ticker_text'] = HGI_PORTFOLIO
+    st.rerun()
 if st.sidebar.button("📥 Szew Portfolio laden"):
-    st.session_state.ticker_text = SZEW_PORTFOLIO
+    st.session_state['ticker_text'] = SZEW_PORTFOLIO
     st.rerun()
 
 show_experts = st.sidebar.checkbox("🧠 Experten-News anzeigen", value=True)
@@ -127,7 +110,6 @@ start_scan = st.button("🚀 Scanner starten", type="primary")
 should_scan = start_scan or auto_refresh
 
 if should_scan:
-    # Lese direkt aus dem (eventuell durch Button aktualisierten) Textfeld
     raw_inputs = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
     tickers = []
     for item in raw_inputs:
@@ -231,15 +213,15 @@ if should_scan:
         status_text.empty()
         progress_bar.empty()
     
-    st.session_state.scan_results = temp_results
-    st.session_state.scan_news = temp_news
-    st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
+    st.session_state['scan_results'] = temp_results
+    st.session_state['scan_news'] = temp_news
+    st.session_state['last_update'] = datetime.now().strftime("%H:%M:%S")
 
 # B) ANZEIGE
-if st.session_state.scan_results:
-    results = st.session_state.scan_results
-    news_data = st.session_state.scan_news
-    last_up = st.session_state.last_update
+if st.session_state['scan_results']:
+    results = st.session_state['scan_results']
+    news_data = st.session_state['scan_news']
+    last_up = st.session_state['last_update']
     
     if auto_refresh: st.markdown(f"🟢 **Live-Modus aktiv** | Zuletzt aktualisiert: **{last_up}**")
     else: st.markdown(f"⚪ Manueller Modus | Stand: **{last_up}**")
@@ -320,22 +302,19 @@ if st.session_state.scan_results:
     if show_experts:
         st.divider()
         st.subheader("🧠 Experten-Briefing")
-        
         col1, col2 = st.columns(2)
         with col1:
             st.info("📊 **Stefan Waldhauser (HGI)**")
-            c1, c2 = st.columns(2)
-            c1.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00000hgi")
-            c2.link_button("📝 Zum Blog", "https://high-tech-investing.de")
+            st.markdown("[👉 Zum Wikifolio (Web)](https://www.wikifolio.com/de/de/w/wf00000hgi)")
+            st.markdown("[👉 Zum Blog](https://high-tech-investing.de)")
             wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
             if wh_news:
                 for item in wh_news: st.markdown(f"• [{item['title']}]({item['link']})")
 
         with col2:
             st.info("🐻 **Szew (Mateusz Szewczyk)**")
-            c3, c4 = st.columns(2)
-            c3.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf000szew1")
-            c4.link_button("📝 Zum Substack", "https://szew.substack.com")
+            st.markdown("[👉 Zum Wikifolio (Web)](https://www.wikifolio.com/de/de/w/wf000szew1)")
+            st.markdown("[👉 Zum Substack](https://szew.substack.com)")
             sz_news = get_rss_feed("https://szew.substack.com/feed")
             if sz_news:
                 for item in sz_news: st.markdown(f"• [{item['title']}]({item['link']})")
