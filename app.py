@@ -9,26 +9,40 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. FIREBASE INITIALISIERUNG ---
+# --- 1. FIREBASE INITIALISIERUNG (Fix für ValueError) ---
 @st.cache_resource
 def get_db_connection():
-    """Initialisiert Firebase mit expliziter Projekt-ID aus der Konfiguration."""
+    """Initialisiert Firebase stabil mit expliziter Projekt-ID."""
     if not firebase_admin._apps:
         try:
             config_str = globals().get("__firebase_config")
             if config_str:
                 config = json.loads(config_str)
                 cred = credentials.Certificate(config)
+                # Projekt-ID explizit aus der Config auslesen
+                project_id = config.get('project_id')
                 firebase_admin.initialize_app(cred, {
-                    'projectId': config.get('project_id'),
+                    'projectId': project_id,
                 })
+                # Client explizit mit der Projekt-ID anfordern
+                return firestore.client(project=project_id)
             else:
+                # Lokale Entwicklung
                 firebase_admin.initialize_app()
-            return firestore.client()
+                return firestore.client()
         except Exception as e:
             st.sidebar.error(f"Datenbank-Initialisierung fehlgeschlagen: {e}")
             return None
-    return firestore.client()
+    else:
+        # Wenn App bereits da, Client mit Projekt-ID holen
+        try:
+            config_str = globals().get("__firebase_config")
+            if config_str:
+                config = json.loads(config_str)
+                return firestore.client(project=config.get('project_id'))
+            return firestore.client()
+        except:
+            return None
 
 db = get_db_connection()
 app_id = globals().get("__app_id", "default-app-id")
@@ -36,7 +50,9 @@ user_id = "default_user"
 
 # --- 2. PERSISTENZ-FUNKTIONEN ---
 def save_favorites_to_db(ticker_string):
-    if not db: return
+    if not db: 
+        st.sidebar.warning("Speichern nicht möglich: Keine Datenbankverbindung.")
+        return
     try:
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc_ref.set({"list": ticker_string, "updated_at": datetime.now()})
@@ -170,26 +186,21 @@ def fetch_stock_data(symbols_tuple, rsi_max):
                 p = info.get('currentPrice') or h['Close'].iloc[-1]
                 prev = info.get('previousClose', p)
                 
-                # Wachstumsdaten
                 rev_growth = info.get('revenueGrowth', 0)
                 earn_growth = info.get('earningsGrowth', 0)
                 
-                # Cashflow & PEG
                 peg = info.get('pegRatio') or info.get('trailingPegRatio') or "-"
                 fcf = info.get('freeCashflow')
                 mcap = info.get('marketCap')
                 fcf_yield = (fcf/mcap*100) if fcf and mcap else 0
                 
-                # Verschuldung
                 cash = info.get('totalCash')
                 debt = info.get('totalDebt')
                 net_debt = (debt - cash) if (debt is not None and cash is not None) else info.get('netDebt')
                 
-                # Analysten
                 target = info.get('targetMeanPrice')
                 potential = ((target - p) / p * 100) if target else 0
                 
-                # Bewertung Logik
                 bewertung = "Neutral"
                 if peg and isinstance(peg, (int, float)):
                     if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
@@ -246,7 +257,6 @@ if st.session_state.scan_results:
     
     st.divider()
     
-    # DETAIL ANALYSE
     st.subheader("📉 Detail-Analyse & Zukunftsausblick")
     selected = st.selectbox("Aktie wählen:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
     active_sym = selected.split("(")[-1].replace(")", "")
