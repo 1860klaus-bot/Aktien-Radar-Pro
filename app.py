@@ -27,7 +27,6 @@ WKN_MAP = {
 }
 
 # --- 2. SESSION STATE INITIALISIERUNG ---
-# Verhindert das "Verschwinden" der Daten beim Rerun
 if 'ticker_input' not in st.session_state:
     st.session_state.ticker_input = FAVORITEN
 if 'rsi_limit' not in st.session_state:
@@ -46,10 +45,27 @@ def get_rss_news(url):
 def load_list_callback(text):
     st.session_state.ticker_input = text
 
+def color_negative_red_positive_green(val):
+    """Farbe für Trends und Wachstum"""
+    try:
+        if isinstance(val, str):
+            val = float(val.replace('%', '').replace('+', ''))
+        color = 'green' if val > 0 else 'red' if val < 0 else 'white'
+        return f'color: {color}'
+    except:
+        return ''
+
+def color_rsi(val):
+    """RSI Farbskala: Grün für unter 35 (Kaufzone), Rot für über 70 (Verkaufszone)"""
+    try:
+        color = 'lightgreen' if val <= 35 else 'tomato' if val >= 70 else 'white'
+        return f'background-color: {color}; color: black' if color != 'white' else ''
+    except:
+        return ''
+
 # --- 4. SEITENLEISTE (UI & LOGIK) ---
 st.sidebar.header("📂 Portfolios & Listen")
 
-# Standard-Listen laden
 col1, col2 = st.sidebar.columns(2)
 with col1:
     st.button("🇩🇪 DAX", on_click=load_list_callback, args=(DAX_LISTE,))
@@ -66,11 +82,9 @@ with cexp1:
 with cexp2:
     st.button("📥 Szew", on_click=load_list_callback, args=(SZEW_TICKERS,))
 
-# Ticker Eingabefeld
 ticker_text = st.sidebar.text_area("Aktien-Symbole (Kürzel):", value=st.session_state.ticker_input, height=120)
-st.session_state.ticker_input = ticker_text # Update state
+st.session_state.ticker_input = ticker_text
 
-# Einstellungen
 st.sidebar.divider()
 st.session_state.rsi_limit = st.sidebar.slider("RSI-Limit (Maximalwert)", 10, 100, st.session_state.rsi_limit)
 auto_refresh = st.sidebar.toggle("⏱️ Automatischer Scan", value=False)
@@ -90,7 +104,6 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
             history = stock.history(period="250d")
             
             if not history.empty and len(history) > 30:
-                # RSI 14 Tage
                 delta = history['Close'].diff()
                 gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
                 loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -102,14 +115,22 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
                     prev_c = info.get('previousClose', price)
                     day_change = ((price - prev_c) / prev_c) * 100
                     
+                    # Kennzahlen für Umsatz und Gewinn
+                    rev_growth = info.get('revenueGrowth', 0)
+                    earn_growth = info.get('earningsGrowth', 0)
+                    target = info.get('targetMeanPrice')
+                    potential = ((target - price) / price) * 100 if target else 0
+                    
                     scan_results.append({
                         "Name": info.get('shortName', sym),
                         "Symbol": sym,
-                        "Kurs": f"{price:.2f}",
-                        "Heute %": f"{day_change:+.2f}%",
+                        "Kurs": round(price, 2),
+                        "Heute %": round(day_change, 2),
                         "RSI": round(rsi_val, 1),
+                        "Umsatz-Wachstum %": round(rev_growth * 100, 1) if rev_growth else 0,
+                        "Gewinn-Wachstum %": round(earn_growth * 100, 1) if earn_growth else 0,
                         "PEG": info.get('pegRatio', '-'),
-                        "Potential %": f"{((info.get('targetMeanPrice', price) - price) / price) * 100:.1f}%" if info.get('targetMeanPrice') else "-"
+                        "Potential %": round(potential, 1) if target else 0
                     })
         except: pass
         prog_bar.progress((i + 1) / len(symbols))
@@ -121,7 +142,22 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
 if st.session_state.scan_results:
     st.caption(f"Letztes Update: {st.session_state.get('last_update', 'Gerade eben')}")
     df_results = pd.DataFrame(st.session_state.scan_results)
-    st.dataframe(df_results, use_container_width=True, hide_index=True)
+    
+    # Styling der Tabelle
+    styled_df = df_results.style.applymap(
+        color_negative_red_positive_green, 
+        subset=['Heute %', 'Umsatz-Wachstum %', 'Gewinn-Wachstum %', 'Potential %']
+    ).applymap(
+        color_rsi, 
+        subset=['RSI']
+    ).format({
+        "Heute %": "{:+.2f}%",
+        "Umsatz-Wachstum %": "{:+.1f}%",
+        "Gewinn-Wachstum %": "{:+.1f}%",
+        "Potential %": "{:+.1f}%"
+    })
+    
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
     
     st.divider()
     
