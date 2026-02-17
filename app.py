@@ -9,227 +9,317 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- 1. ROBUSTE FIREBASE INITIALISIERUNG ---
-def initialize_db():
-    """Initialisiert Firebase und gibt den Firestore-Client mit expliziter Projekt-ID zurück."""
-    try:
-        # Falls bereits eine Instanz läuft, versuchen wir den Client zu holen
-        if firebase_admin._apps:
-            try:
-                config_str = globals().get("__firebase_config")
-                if config_str:
-                    config = json.loads(config_str)
-                    pid = config.get('project_id') or config.get('projectId')
-                    return firestore.client(project=pid)
+# --- 1. FIREBASE INITIALISIERUNG (Maximale Stabilität) ---
+@st.cache_resource
+def get_db_connection():
+    """Initialisiert Firebase stabil mit expliziter Projekt-ID."""
+    if not firebase_admin._apps:
+        try:
+            config_str = globals().get("__firebase_config")
+            if config_str:
+                config = json.loads(config_str)
+                cred = credentials.Certificate(config)
+                # Projekt-ID explizit aus der Config auslesen
+                project_id = config.get('project_id') or config.get('projectId')
+                firebase_admin.initialize_app(cred, {
+                    'projectId': project_id,
+                })
+                return firestore.client(project=project_id)
+            else:
+                # Lokale Entwicklung
+                firebase_admin.initialize_app()
                 return firestore.client()
-            except:
-                pass
+        except Exception as e:
+            st.sidebar.error(f"DB-Fehler: {e}")
+            return None
+    else:
+        try:
+            config_str = globals().get("__firebase_config")
+            if config_str:
+                config = json.loads(config_str)
+                pid = config.get('project_id') or config.get('projectId')
+                return firestore.client(project=pid)
+            return firestore.client()
+        except:
+            return None
 
-        # Neue Initialisierung
-        config = None
-        if "__firebase_config" in globals():
-            raw_cfg = globals()["__firebase_config"]
-            config = json.loads(raw_cfg) if isinstance(raw_cfg, str) else raw_cfg
-        
-        if config:
-            project_id = config.get('project_id') or config.get('projectId')
-            if not project_id:
-                return None
-            
-            cred = credentials.Certificate(config)
-            firebase_admin.initialize_app(cred, {'projectId': project_id})
-            return firestore.client(project=project_id)
-    except Exception:
-        pass
-    return None
-
-# Initialer Verbindungsaufbau
-if 'db' not in st.session_state:
-    st.session_state.db = initialize_db()
-
+db = get_db_connection()
 app_id = globals().get("__app_id", "default-app-id")
 user_id = "default_user_radar"
 
-# --- 2. VERBESSERTE SPEICHER-FUNKTIONEN ---
-def save_favorites_to_cloud(ticker_string):
-    """Speichert Favoriten mit Reconnect-Versuch bei Fehlern."""
-    # Falls DB nicht bereit, versuche Reconnect
-    if not st.session_state.db:
-        st.session_state.db = initialize_db()
-        
-    if not st.session_state.db: 
-        st.sidebar.error("❌ Cloud-Speicher nicht verfügbar. (Verbindung fehlgeschlagen)")
+# --- 2. PERSISTENZ-FUNKTIONEN ---
+def save_favorites_to_db(ticker_string):
+    if not db: 
+        st.sidebar.warning("Speichern nicht möglich: Keine Datenbankverbindung.")
         return
-    
     try:
-        # Pfad-Regel: /artifacts/{appId}/users/{userId}/{collectionName}/{docId}
-        doc_ref = st.session_state.db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
-        doc_ref.set({
-            "list": ticker_string,
-            "updated_at": datetime.now()
-        }, merge=True)
-        st.sidebar.success("✅ Favoriten sicher in der Cloud gespeichert!")
+        doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
+        doc_ref.set({"list": ticker_string, "updated_at": datetime.now()})
+        st.sidebar.success("✅ Favoriten in Cloud gespeichert!")
     except Exception as e:
-        st.sidebar.error(f"❌ Fehler beim Speichern: {str(e)}")
+        st.sidebar.error(f"Speichern fehlgeschlagen: {e}")
 
-def load_favorites_from_cloud():
-    """Lädt Favoriten aus der Cloud oder nutzt Standard-Werte."""
+def load_favorites_from_db():
     default_favs = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
-    if not st.session_state.db:
-        st.session_state.db = initialize_db()
-    if not st.session_state.db: 
-        return default_favs
+    if not db: return default_favs
     try:
-        doc_ref = st.session_state.db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
+        doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
         doc = doc_ref.get()
         if doc.exists:
             return doc.to_dict().get("list", default_favs)
-    except:
-        pass
+    except: pass
     return default_favs
 
-# --- 3. APP SETUP & SIDEBAR ---
-st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide")
-
-# Listen-Vorgaben
+# --- 3. DATEN-LISTEN (INDIZES & EXPERTEN) ---
 HGI_TICKERS = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP"
 SZEW_TICKERS = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
-DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE"
-NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, ADBE, AMD, NFLX, PLTR, COIN"
+
+DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE, BEI.DE, CON.DE, CBK.DE, DBK.DE, RWE.DE, AIR.DE, P911.DE, SY1.DE, SRT3.DE"
+MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, HEI.DE, JUN3.DE, GXI.DE, TAG.DE, WCH.DE, NEM.DE"
+SDAX_LISTE = "SDF.DE, GFG.DE, BC8.DE, MOR.DE, ADV.DE, HDD.DE, HHFA.DE, EUZ.DE, BYW6.DE, S92.DE"
+
+SP500_TOP = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, BRK-B, LLY, AVGO, JPM, UNH, V, XOM, MA, PG, COST, JNJ, HD, ABBV, MRK"
+NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, AZN, CSCO, TMUS, ADBE, AMD, NFLX, INTC, TXN, AMAT, QCOM"
+DOW_JONES = "UNH, GS, HD, MSFT, CRM, AMGN, V, CAT, MCD, BA, VZ, DIS, KO, JPM, JNJ, PG, AAPL, MMM, IBM, AXP"
+GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS, MC.PA, OR.PA, RMS.PA"
+FAVORITEN_INIT = "NVDA, TSLA, ANGI, PLTR, COIN, AMD, RHM.DE, TUI1.DE"
+
+# --- 4. APP KONFIGURATION ---
+st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide")
 
 if 'ticker_input' not in st.session_state:
-    st.session_state.ticker_input = load_favorites_from_cloud()
+    st.session_state.ticker_input = load_favorites_from_db()
+if 'scan_results' not in st.session_state:
+    st.session_state.scan_results = None
 
+# --- STYLING FUNKTIONEN ---
+def color_metric(val):
+    try:
+        v = float(str(val).replace('%', '').replace('+', ''))
+        return 'color: #00ff00' if v > 0 else 'color: #ff4b4b' if v < 0 else ''
+    except: return ''
+
+def color_rsi(val):
+    try:
+        color = 'lightgreen' if val <= 35 else 'tomato' if val >= 70 else 'white'
+        return f'background-color: {color}; color: black' if color != 'white' else ''
+    except: return ''
+
+def color_debt(val):
+    try:
+        if val < 0: return 'background-color: rgba(0, 255, 0, 0.1); color: #00ff00'
+        if val > 0: return 'background-color: rgba(255, 75, 75, 0.1); color: #ff4b4b'
+    except: pass
+    return ''
+
+def color_valuation(val):
+    if val == "Unterbewertet": return 'background-color: #006400; color: white'
+    if val == "Günstig": return 'background-color: #90EE90; color: black'
+    if val == "Überbewertet": return 'background-color: #8B0000; color: white'
+    return ''
+
+def format_currency(val):
+    if val is None or pd.isna(val): return "-"
+    abs_val = abs(val)
+    if abs_val >= 1_000_000_000: return f"{val / 1_000_000_000:.2f} Mrd"
+    elif abs_val >= 1_000_000: return f"{val / 1_000_000:.2f} Mio"
+    return str(round(val, 2))
+
+# --- 5. SEITENLEISTE ---
 st.sidebar.header("⚙️ Konfiguration")
 
-# Cloud Status Anzeige
-if st.session_state.db:
+if db:
     st.sidebar.success("🟢 Cloud verbunden")
 else:
     st.sidebar.warning("🔴 Cloud offline")
-    if st.sidebar.button("🔄 Verbindung testen"):
-        st.session_state.db = initialize_db()
-        st.rerun()
 
-with st.sidebar.expander("📊 Indizes laden", expanded=False):
+with st.sidebar.expander("🇩🇪 Deutsche Indizes", expanded=False):
     if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
-    if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_100
+    if st.button("MDAX", use_container_width=True): st.session_state.ticker_input = MDAX_LISTE
+    if st.button("SDAX", use_container_width=True): st.session_state.ticker_input = SDAX_LISTE
 
-with st.sidebar.expander("🧠 Experten", expanded=True):
-    c1, c2 = st.columns(2)
-    if c1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
-    if c2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
+with st.sidebar.expander("🇺🇸 US Indizes", expanded=False):
+    if st.button("S&P 500 (Top)", use_container_width=True): st.session_state.ticker_input = SP500_TOP
+    if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_100
+    if st.button("Dow Jones 30", use_container_width=True): st.session_state.ticker_input = DOW_JONES
+
+with st.sidebar.expander("🧠 Experten & Favoriten", expanded=True):
+    col_e1, col_e2 = st.columns(2)
+    if col_e1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
+    if col_e2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
+    if st.button("🌍 Global Top laden", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
     if st.button("📂 Cloud-Favoriten laden", use_container_width=True):
-        st.session_state.ticker_input = load_favorites_from_cloud()
+        st.session_state.ticker_input = load_favorites_from_db()
         st.rerun()
+    if st.button("⭐ Standard Favoriten laden", use_container_width=True): st.session_state.ticker_input = FAVORITEN_INIT
 
 st.sidebar.divider()
-ticker_text = st.sidebar.text_area("⭐ Meine Ticker-Liste:", value=st.session_state.ticker_input, height=120)
+ticker_text = st.sidebar.text_area("Ticker-Liste (Editierbar):", value=st.session_state.ticker_input, height=120)
 st.session_state.ticker_input = ticker_text
 
 if st.sidebar.button("💾 Liste dauerhaft speichern", use_container_width=True, type="primary"):
-    save_favorites_to_cloud(ticker_text)
+    save_favorites_to_db(ticker_text)
 
 st.sidebar.divider()
-rsi_max = st.sidebar.slider("RSI-Filter", 10, 100, 85)
-auto_refresh = st.sidebar.toggle("⏱️ Auto-Scan", value=False)
-interval = st.sidebar.slider("Sekunden", 10, 300, 60)
+rsi_limit = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
+auto_refresh = st.sidebar.toggle("⏱️ Auto-Update", value=False)
+refresh_interval = st.sidebar.slider("Intervall (Sekunden)", 10, 300, 60)
 
-# --- 4. SCANNER LOGIK ---
+# --- 6. CORE SCANNER ---
 st.title("💎 Aktien-Radar Pro")
 
 @st.cache_data(ttl=300)
-def scan_tickers_robust(symbols_tuple, rsi_limit):
+def fetch_stock_data_robust(symbols_tuple, rsi_max):
     results = []
     symbols = [s.strip().upper() for s in list(symbols_tuple) if s.strip()]
-    status = st.empty()
+    status_msg = st.empty()
     bar = st.progress(0)
     
     for i, sym in enumerate(symbols):
-        status.info(f"Scanne **{sym}**... ({i+1}/{len(symbols)})")
+        status_msg.info(f"Analysiere: **{sym}** ({i+1}/{len(symbols)})")
         try:
             t = yf.Ticker(sym)
             h = t.history(period="60d")
             if h.empty or len(h) < 20: continue
             
-            # RSI & Kurs
-            last_p = h['Close'].iloc[-1]
-            prev_p = h['Close'].iloc[-2]
+            # RSI 14
             delta = h['Close'].diff()
             up = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
             down = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
             rsi = 100 - (100 / (1 + (up.iloc[-1] / down.iloc[-1])))
             
-            if rsi <= rsi_limit:
+            if rsi <= rsi_max:
                 try:
                     info = t.info
                 except:
                     info = {}
                 
-                p = info.get('currentPrice') or last_p
-                prev = info.get('previousClose') or prev_p
+                p = info.get('currentPrice') or h['Close'].iloc[-1]
+                prev = info.get('previousClose') or h['Close'].iloc[-2]
+                
                 peg = info.get('pegRatio') or info.get('trailingPegRatio') or "-"
-                fcf_yield = (info.get('freeCashflow', 0) / info.get('marketCap', 1) * 100) if info.get('freeCashflow') else 0
+                fcf = info.get('freeCashflow', 0)
+                mcap = info.get('marketCap', 1)
+                fcf_yield = (fcf/mcap*100) if fcf and mcap else 0
+                
+                cash = info.get('totalCash', 0)
+                debt = info.get('totalDebt', 0)
+                net_debt = (debt - cash) if (debt and cash) else info.get('netDebt', 0)
+                
+                target = info.get('targetMeanPrice')
+                potential = ((target - p) / p * 100) if target else 0
+                
+                # Bewertung Logik
+                bewertung = "Neutral"
+                if isinstance(peg, (int, float)):
+                    if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
+                    elif (peg < 1.5 or fcf_yield > 5) and rsi < 45: bewertung = "Günstig"
+                    elif peg > 2.5: bewertung = "Überbewertet"
                 
                 results.append({
-                    "Name": info.get('shortName', sym), "Symbol": sym, "Kurs": round(p, 2),
-                    "Heute %": round(((p-prev)/prev)*100, 2), "RSI": round(rsi, 1),
-                    "PEG": round(float(peg), 2) if isinstance(peg, (int, float)) else "-",
+                    "Name": info.get('shortName', sym),
+                    "Symbol": sym,
+                    "Kurs": round(p, 2),
+                    "Bid": info.get('bid', '-'),
+                    "Ask": info.get('ask', '-'),
+                    "Heute %": round(((p-prev)/prev)*100, 2),
+                    "RSI": round(rsi, 1),
+                    "Umsatz-Wachst. %": round(info.get('revenueGrowth', 0) * 100, 1),
+                    "PEG": round(peg, 2) if isinstance(peg, (int, float)) else "-",
                     "FCF Yield %": round(fcf_yield, 1),
-                    "Netto-Schuld": (info.get('totalDebt', 0) - info.get('totalCash', 0)),
-                    "Potential %": round(((info.get('targetMeanPrice', p)-p)/p*100), 1) if info.get('targetMeanPrice') else 0
+                    "Netto-Schuld": net_debt,
+                    "Rating": str(info.get('recommendationKey', '-')).replace('_', ' ').capitalize(),
+                    "Potential %": round(potential, 1),
+                    "Bewertung": bewertung
                 })
         except: continue
         bar.progress((i + 1) / len(symbols))
-    status.empty(); bar.empty()
+    
+    status_msg.empty()
+    bar.empty()
     return results
 
 if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
-    syms = tuple(ticker_text.split(","))
-    if syms:
-        st.session_state.scan_results = scan_tickers_robust(syms, rsi_max)
+    sym_list = tuple(ticker_text.split(","))
+    if sym_list:
+        data = fetch_stock_data_robust(sym_list, rsi_limit)
+        st.session_state.scan_results = data
         st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
 
-# --- 5. ANZEIGE ---
-if st.session_state.get('scan_results'):
-    st.write(f"Update: **{st.session_state.get('last_update')}**")
+# --- 7. ANZEIGE ---
+if st.session_state.scan_results:
+    st.write(f"Zuletzt aktualisiert: **{st.session_state.last_update}**")
     df = pd.DataFrame(st.session_state.scan_results)
     
-    def color_growth(val):
-        try:
-            v = float(str(val).replace('%', ''))
-            return 'color: #00ff00' if v > 0 else 'color: #ff4b4b' if v < 0 else ''
-        except: return ''
-
-    st.dataframe(
-        df.style.applymap(color_growth, subset=['Heute %', 'Potential %', 'FCF Yield %'])
-        .format({"Heute %": "{:+.2f}%", "Potential %": "{:+.1f}%", "FCF Yield %": "{:.1f}%", 
-                 "Netto-Schuld": lambda x: f"{x/1e6:.1f} Mio" if abs(x) < 1e9 else f"{x/1e9:.2f} Mrd"}),
-        use_container_width=True, hide_index=True
-    )
+    styled_df = df.style.applymap(color_metric, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-Wachst. %'])\
+                        .applymap(color_rsi, subset=['RSI'])\
+                        .applymap(color_debt, subset=['Netto-Schuld'])\
+                        .applymap(color_valuation, subset=['Bewertung'])\
+                        .format({
+                            "Heute %": "{:+.2f}%", "Potential %": "{:+.1f}%", "Umsatz-Wachst. %": "{:+.1f}%", "FCF Yield %": "{:.1f}%",
+                            "Netto-Schuld": lambda x: format_currency(x)
+                        })
     
-    selected = st.selectbox("Chart:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+    
+    st.divider()
+    
+    # DETAIL ANALYSE
+    selected = st.selectbox("Aktie für Detail-Analyse wählen:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
     active_sym = selected.split("(")[-1].replace(")", "")
+    
     if active_sym:
-        hist = yf.Ticker(active_sym).history(period="1y")
-        fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'])])
-        fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark", height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader(f"Analyse: {selected}")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            hist_obj = yf.Ticker(active_sym)
+            hist_d = hist_obj.history(period="1y")
+            
+            selected_indicators = st.multiselect(
+                "Indikatoren wählen:",
+                ["Bollinger Bänder", "SMA 20", "SMA 50", "SMA 200"],
+                default=["SMA 50", "SMA 200"]
+            )
+            
+            fig = go.Figure(data=[go.Candlestick(
+                x=hist_d.index, open=hist_d['Open'], high=hist_d['High'], low=hist_d['Low'], close=hist_d['Close'],
+                name="Kurs"
+            )])
+            
+            if "SMA 20" in selected_indicators:
+                fig.add_trace(go.Scatter(x=hist_d.index, y=hist_d['Close'].rolling(20).mean(), line=dict(color='yellow', width=1), name="SMA 20"))
+            if "SMA 50" in selected_indicators:
+                fig.add_trace(go.Scatter(x=hist_d.index, y=hist_d['Close'].rolling(50).mean(), line=dict(color='cyan', width=1), name="SMA 50"))
+            if "SMA 200" in selected_indicators:
+                fig.add_trace(go.Scatter(x=hist_d.index, y=hist_d['Close'].rolling(200).mean(), line=dict(color='red', width=2), name="SMA 200"))
+            if "Bollinger Bänder" in selected_indicators:
+                ma = hist_d['Close'].rolling(20).mean(); sd = hist_d['Close'].rolling(20).std()
+                fig.add_trace(go.Scatter(x=hist_d.index, y=ma+2*sd, line=dict(color='rgba(173,216,230,0.3)'), name="BB Oben"))
+                fig.add_trace(go.Scatter(x=hist_d.index, y=ma-2*sd, line=dict(color='rgba(173,216,230,0.3)'), fill='tonexty', name="BB Unten"))
 
-# --- 6. FEEDS ---
+            fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0))
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            detail_i = yf.Ticker(active_sym).info
+            st.metric("Forward KGV", detail_i.get('forwardPE', '-'))
+            st.metric("EBITDA Marge", f"{detail_i.get('ebitdaMargins', 0)*100:.1f}%" if detail_i.get('ebitdaMargins') else "-")
+            st.write("**Profil:**")
+            st.caption(detail_i.get('longBusinessSummary', "N/A")[:500] + "...")
+
+# --- 8. RSS & WIKIFOLIO ---
 st.divider()
 cl, cr = st.columns(2)
 with cl:
     st.info("📊 **Stefan Waldhauser (HGI)**")
-    st.link_button("📈 Wikifolio", "https://www.wikifolio.com/de/de/w/wf0stwtech", use_container_width=True)
+    st.link_button("📈 Wikifolio HGI", "https://www.wikifolio.com/de/de/w/wf0stwtech", use_container_width=True)
     f = feedparser.parse("https://hightechinvesting.substack.com/feed")
     for e in f.entries[:3]: st.markdown(f"• [{e.title}]({e.link})")
 with cr:
     st.info("🐻 **Simon Weishar (Szew)**")
-    st.link_button("📈 Wikifolio", "https://www.wikifolio.com/de/de/w/wf00szew01", use_container_width=True)
+    st.link_button("📈 Wikifolio Szew", "https://www.wikifolio.com/de/de/w/wf00szew01", use_container_width=True)
     f = feedparser.parse("https://szew.substack.com/feed")
     for e in f.entries[:3]: st.markdown(f"• [{e.title}]({e.link})")
 
 if auto_refresh:
-    time.sleep(interval)
+    time.sleep(refresh_interval)
     st.rerun()
