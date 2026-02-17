@@ -220,57 +220,57 @@ if st.session_state['scan_results']:
     
     # --- CHART-ANALYSE ---
     st.divider()
- st.Unterüberschrift(„📉 Gewinn-Diagramm (Bollinger, SMA 200 & SMA 50)“)
+    st.subheader("📉 Profi-Chart (Bollinger, SMA 200 & SMA 50)")
     
- selected_ticker = st.Auswahlfeld("Wahle eine Aktie für das Detail-Chart:", 
-                                    [r['Kürzel'] für r in Erbnisse])
+    selected_ticker = st.selectbox("Wähle eine Aktie für den Detail-Chart:", 
+                                    [r['Kürzel'] for r in results])
     
- wenn ausgewühlter_Ticker:
- st.Schreiber(f"### Analysieren: {ausgewähler_ticker}")
- chart_stock = yf.Ticker(ausgewähler_ticker)
- chart_df = chart_stock.Geschichte(Zeitraum="2 Jahre")
+    if selected_ticker:
+        st.write(f"### Analyse: {selected_ticker}")
+        chart_stock = yf.Ticker(selected_ticker)
+        chart_df = chart_stock.history(period="2y")
         
- wenn nicht chart_df.Lüstern:
- Diagrammmmm_df['SMA_20'] = chart_df['Schließen'].Walzen(Fenster=20).beteuten()
- Diagrammmmm_df['Std_Dev'] = chart_df['Schließen'].Walzen(Fenster=20).Geschlechtskrankheit()
- Diagrammmmm_df[„Oberes Band“] = chart_df['SMA_20'] + (Diagrammmmm_df['Std_Dev'] * 2)
- Diagrammmmm_df[„Unteres Band“] = chart_df['SMA_20'] - (Diagrammmmm_df['Std_Dev'] * 2)
- Diagrammmmm_df[„Trend (SMA 200)“] = chart_df['Schließen'].Walzen(Fenster=200).beteuten()
- Diagrammmmm_df[„Trend (SMA 50)“] = chart_df['Schließen'].Walzen(Fenster=50).beteuten()
+        if not chart_df.empty:
+            chart_df['SMA_20'] = chart_df['Close'].rolling(window=20).mean()
+            chart_df['Std_Dev'] = chart_df['Close'].rolling(window=20).std()
+            chart_df['Oberes Band'] = chart_df['SMA_20'] + (chart_df['Std_Dev'] * 2)
+            chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
+            chart_df['Trend (SMA 200)'] = chart_df['Close'].rolling(window=200).mean()
+            chart_df['Trend (SMA 50)'] = chart_df['Close'].rolling(window=50).mean()
             
- plot_df = chart_df.Iloc[-250:].kopieren()
- st.line_chart(plot_df[['Schließen', „Oberes Band“, „Unteres Band“, „Trend (SMA 200)“, „Trend (SMA 50)“]])
- st.Untertitel(„Legende: SMA 200 (Langfristig) | KM 50 (Mittelfristig). Ein Kreuz der Linien ist oft ein wichtiges Signal.“)
+            plot_df = chart_df.iloc[-250:].copy()
+            st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'Trend (SMA 200)', 'Trend (SMA 50)']])
+            st.caption("Legende: SMA 200 (Langfristig) | SMA 50 (Mittelfristig). Ein Kreuzen der Linien ist oft ein wichtiges Signal.")
 
- Delta = Diagramm_df['Schließen'].Diff()
- Gewinn = Delta.wo(Delta > 0, 0)
- Lust = - Delta.wo(Delta < 0, 0)
- avg_gain = Gewinn.ewm(Alpha=1/14, anpassen=Falsch).beteuten()
- avg_loss = Lust.ewm(Alpha=1/14, anpassen=Falsch).beteuten()
- Diagrammmmm_df['RSI'] = 100 - (100 / (1 + (Durchschnitt_Gewinn / Durchschnitt_Verlust)))
+            delta = chart_df['Close'].diff()
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
+            avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+            avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+            chart_df['RSI'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
             
- rsi_plot = chart_df.Iloc[-250:].kopieren()
- rsi_plot[„Überkauf“] = 70
- rsi_plot[„Überkauf“] = 30
- st.line_chart(rsi_plot[['RSI', „Überkauf“, „Überkauf“]], Farbe=["#0000FF", "#FF0000", "#00FF00"])
+            rsi_plot = chart_df.iloc[-250:].copy()
+            rsi_plot['Overbought'] = 70
+            rsi_plot['Oversold'] = 30
+            st.line_chart(rsi_plot[['RSI', 'Overbought', 'Oversold']], color=["#0000FF", "#FF0000", "#00FF00"])
 
- st.Teiler()
- st.Unterüberschrift("📰 Nachrichten-Ticker")
- für Ticker in news_data:
- display_name = Ticker
- für wkn, t in WKN_MAP.Artikel():
- wenn t == Ticker und Länge(wkn) == 6: display_name = f"{wkn} ({Ticker})"
+    st.divider()
+    st.subheader("📰 Nachrichten-Ticker")
+    for ticker in news_data:
+        display_name = ticker
+        for wkn, t in WKN_MAP.items():
+            if t == ticker and len(wkn) == 6: display_name = f"{wkn} ({ticker})"
                 
- mit st.Expander(f"Infos zu {Anzeige_name}"):
- Artikel = Nachrichten_Daten.kommen(Ticker, [])
- wenn Artikel:
- für Artikel in Artikel:
- t = Artikel.kommen('Titel') Oder "Neuigkeiten"
- l = Artikel.kommen('Link') Oder f"https://de.finance.yahoo.com/quote/{Ticker}"
- Kneipe = Artikel.kommen('Verlag') Oder "Yahoo"
- st.Markdown(f"**[{t}]({l})**")
- st.Untertitel(f"Quelle: {Kneipe}")
- sonst:
- st.Info(f"Keine direkte Nachrichten. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{Ticker})")
-Elif St.Geschmack(„Erneut scannen um Erfebnisse zu laden“):
- passieren
+        with st.expander(f"Infos zu {display_name}"):
+            articles = news_data.get(ticker, [])
+            if articles:
+                for item in articles:
+                    t = item.get('title') or "News"
+                    l = item.get('link') or f"https://de.finance.yahoo.com/quote/{ticker}"
+                    pub = item.get('publisher') or "Yahoo"
+                    st.markdown(f"**[{t}]({l})**")
+                    st.caption(f"Quelle: {pub}")
+            else:
+                st.info(f"Keine direkten News. [Hier klicken für Yahoo Finanzen](https://de.finance.yahoo.com/quote/{ticker})")
+elif st.button("Erneut scannen um Ergebnisse zu laden"):
+    pass
