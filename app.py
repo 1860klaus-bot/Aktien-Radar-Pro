@@ -15,8 +15,12 @@ except ImportError:
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
 st.title("💎 Aktien-Radar: Global (News & Experten)")
 
-# --- 1. DATENBANKEN ---
+# --- 1. DATENBANKEN (MANUELLE PFLEGE DER EXPERTEN-WERTE) ---
+
+# 🟢 HGI PORTFOLIO (Stefan Waldhauser) - Hier die aktuellen Ticker anpassen
 HGI_PORTFOLIO = "NVDA, PLTR, ANET, CRWD, HUBS, MNDY, S, IOT, NET, CFLT, DDOG" 
+
+# 🔵 SZEW PORTFOLIO (Mateusz Szewczyk) - Hier die aktuellen Ticker anpassen
 SZEW_PORTFOLIO = "NU, TTD, DDOG, PLTR, CELH, CRWD, ZS, MDB, S, SNOW, SHOP"
 
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -52,7 +56,7 @@ def get_google_news(query_term):
         news_items = []
         for entry in feed.entries[:3]: 
             pub_date = entry.published[:16] if hasattr(entry, 'published') else ""
-            news_items.append({'title': entry.title, 'link': entry.link, 'publisher': entry.source.title, 'published': pub_date})
+            news_items.append({'title': entry.title, 'link': entry.link, 'publisher': entry.source.title if hasattr(entry, 'source') else "Google News", 'published': pub_date})
         return news_items
     except: return []
 
@@ -66,7 +70,7 @@ def get_rss_feed(rss_url):
         return news_items
     except: return []
 
-# WICHTIG: Callback-Funktion für sicheres Laden der Listen
+# Callback-Funktion für sicheres Laden der Listen
 def load_list(ticker_string):
     st.session_state.ticker_text = ticker_string
 
@@ -78,7 +82,6 @@ if 'scan_results' not in st.session_state: st.session_state.scan_results = None
 if 'scan_news' not in st.session_state: st.session_state.scan_news = {}
 if 'last_update' not in st.session_state: st.session_state.last_update = None
 
-# Buttons mit Callback (on_click) - Das verhindert den Fehler!
 col1, col2 = st.sidebar.columns(2)
 with col1:
     st.button("🇩🇪 DAX Liste", on_click=load_list, args=(DAX_LISTE,))
@@ -91,19 +94,16 @@ with col3:
 with col4:
     st.button("⭐ Favoriten", on_click=load_list, args=(FAVORITEN_LISTE,))
 
-# Textfeld
 ticker_input = st.sidebar.text_area("Aktien-Liste (WKN, Name oder Kürzel)", key="ticker_text", height=150)
 
 st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 auto_refresh = st.sidebar.toggle("⏱️ Live-Modus", value=False)
 
-# EXPERTEN SEKTION
 st.sidebar.divider()
 st.sidebar.header("4. Experten-Portfolios")
 st.sidebar.caption("Lade die Top-Werte der Experten:")
 
-# Diese Buttons waren der Fehler - jetzt mit on_click sicher!
 st.sidebar.button("📥 HGI Portfolio laden", on_click=load_list, args=(HGI_PORTFOLIO,))
 st.sidebar.button("📥 Szew Portfolio laden", on_click=load_list, args=(SZEW_PORTFOLIO,))
 
@@ -153,8 +153,6 @@ if should_scan:
                 current_price = df_hist['Close'].iloc[-1]
                 
                 live_price = stock.info.get('currentPrice') or current_price
-                bid = stock.info.get('bid')
-                ask = stock.info.get('ask')
                 prev_close = stock.info.get('previousClose') or df_hist['Close'].iloc[-2]
                 change_pct = ((live_price - prev_close) / prev_close) * 100
                 
@@ -169,9 +167,6 @@ if should_scan:
                 elif sma_50 < sma_200:
                     if (recent_50 > recent_200).any(): trend_signal = "💀 Todeskreuz (Neu)"
                     else: trend_signal = "📉 Abwärtstrend"
-                
-                dist_200 = ((current_price - sma_200) / sma_200) * 100
-                dist_50 = ((current_price - sma_50) / sma_50) * 100
                 
                 info = stock.info
                 name = info.get('shortName') or info.get('longName') or ticker
@@ -193,10 +188,6 @@ if should_scan:
                     earn_growth_display = f"{round(earn_growth * 100, 1)}%" if earn_growth else "N/A"
                     target_display = f"{round(target, 2)} {currency}" if target else "N/A"
                     trend_sign = "+" if change_pct > 0 else ""
-                    d50_sign = "+" if dist_50 > 0 else ""
-                    d200_sign = "+" if dist_200 > 0 else ""
-                    bid_display = f"{round(bid, 2)}" if bid else "-"
-                    ask_display = f"{round(ask, 2)}" if ask else "-"
 
                     temp_results.append({
                         "Name": name, "Kürzel": ticker, "Kurs": f"{round(live_price, 2)} {currency}",
@@ -204,10 +195,7 @@ if should_scan:
                         "Tages-Trend": f"{trend_sign}{round(change_pct, 2)}%",
                         "RSI (14)": round(float(rsi_val), 1), "Trend-Signal": trend_signal,
                         "Umsatz-Wachst.": growth_display, "Gewinn-Wachst.": earn_growth_display,
-                        "PEG": peg_display, "Bewertung": status,
-                        "Abst. SMA50": f"{d50_sign}{round(dist_50, 1)}%",
-                        "Abst. SMA200": f"{d200_sign}{round(dist_200, 1)}%",
-                        "Bid (VK)": bid_display, "Ask (Kauf)": ask_display
+                        "PEG": peg_display, "Bewertung": status
                     })
                     temp_news[ticker] = get_google_news(clean_name)
         except Exception: continue
@@ -307,12 +295,12 @@ if st.session_state.scan_results:
     if show_experts:
         st.divider()
         st.subheader("🧠 Experten-Briefing")
-        
         col1, col2 = st.columns(2)
         with col1:
             st.info("📊 **Stefan Waldhauser (HGI)**")
             c1, c2 = st.columns(2)
-            c1.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00000hgi")
+            # AKTUALISIERTER LINK
+            c1.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf0stwtech")
             c2.link_button("📝 Zum Blog", "https://high-tech-investing.de")
             wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
             if wh_news:
