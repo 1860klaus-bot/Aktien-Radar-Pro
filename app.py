@@ -2,10 +2,12 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import time
+import feedparser
+import urllib.parse
 from datetime import datetime
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (Live-Monitor)")
+st.title("💎 Aktien-Radar: Global (Google News Integration)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -34,11 +36,40 @@ WKN_MAP = {
     "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
 }
 
+# --- HELPER: GOOGLE NEWS FETCH ---
+def get_google_news(query_term):
+    """Holt echte Nachrichten via Google News RSS"""
+    try:
+        # Wir suchen nach "Unternehmensname Aktie" auf Google News Deutschland
+        search_query = urllib.parse.quote(f"{query_term} Aktie")
+        rss_url = f"https://news.google.com/rss/search?q={search_query}&hl=de&gl=DE&ceid=DE:de"
+        
+        feed = feedparser.parse(rss_url)
+        news_items = []
+        
+        # Die Top 5 Nachrichten extrahieren
+        for entry in feed.entries[:5]: 
+            pub_date = entry.published if hasattr(entry, 'published') else ""
+            # Datum kürzen (Alles nach dem Jahr weg, z.B. "Tue, 17 Feb 2026")
+            if len(pub_date) > 16: 
+                pub_date = pub_date[:16]
+                
+            news_items.append({
+                'title': entry.title,
+                'link': entry.link,
+                'publisher': entry.source.title if hasattr(entry, 'source') else "Google News",
+                'published': pub_date
+            })
+        return news_items
+    except:
+        return []
+
 # --- 2. SEITENLEISTE MIT LOGIK ---
 st.sidebar.header("1. Listen laden")
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
+# Initialisiere Session State
 if 'scan_results' not in st.session_state:
     st.session_state['scan_results'] = None
 if 'scan_news' not in st.session_state:
@@ -137,12 +168,14 @@ if should_scan:
                 name = info.get('shortName') or info.get('longName') or ticker
                 currency = info.get('currency', '?')
                 
-                # ZIELE & WACHSTUM
+                # Namen bereinigen für Google News
+                clean_name = name.replace(" Inc.", "").replace(" Corporation", "").replace(" SE", "").replace(" AG", "").split(" ")[0]
+                
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
                 
                 rev_growth = info.get('revenueGrowth', 0) 
-                earn_growth = info.get('earningsGrowth', 0) # Gewinn-Wachstum holen
+                earn_growth = info.get('earningsGrowth', 0)
                 peg_ratio = info.get('pegRatio') or info.get('trailingPegRatio')
                 
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
@@ -154,36 +187,30 @@ if should_scan:
                     
                     growth_display = f"{round(rev_growth * 100, 1)}%" if rev_growth else "N/A"
                     earn_growth_display = f"{round(earn_growth * 100, 1)}%" if earn_growth else "N/A"
-                    
                     target_display = f"{round(target, 2)} {currency}" if target else "N/A"
                     
                     trend_sign = "+" if change_pct > 0 else ""
                     d50_sign = "+" if dist_50 > 0 else ""
                     d200_sign = "+" if dist_200 > 0 else ""
-                    
                     bid_display = f"{round(bid, 2)}" if bid else "-"
                     ask_display = f"{round(ask, 2)}" if ask else "-"
 
                     temp_results.append({
-                        "Name": name, 
-                        "Kürzel": ticker, 
-                        "Kurs": f"{round(live_price, 2)} {currency}",
-                        "Analysten-Ziel": target_display,
-                        "Potenzial %": round(upside, 1),
+                        "Name": name, "Kürzel": ticker, "Kurs": f"{round(live_price, 2)} {currency}",
+                        "Analysten-Ziel": target_display, "Potenzial %": round(upside, 1),
                         "Tages-Trend": f"{trend_sign}{round(change_pct, 2)}%",
-                        "RSI (14)": round(float(rsi_val), 1),
-                        "Trend-Signal": trend_signal,
-                        "Umsatz-Wachst.": growth_display, 
-                        "Gewinn-Wachst.": earn_growth_display,
-                        "PEG": peg_display,
-                        "Bewertung": status,
-                        # Versteckte Spalten für Sortierung
+                        "RSI (14)": round(float(rsi_val), 1), "Trend-Signal": trend_signal,
+                        "Umsatz-Wachst.": growth_display, "Gewinn-Wachst.": earn_growth_display,
+                        "PEG": peg_display, "Bewertung": status,
                         "Abst. SMA50": f"{d50_sign}{round(dist_50, 1)}%",
                         "Abst. SMA200": f"{d200_sign}{round(dist_200, 1)}%",
+                        "Bid (VK)": bid_display, 
+                        "Ask (Kauf)": ask_display
                     })
                     
-                    try: temp_news[ticker] = stock.news[:3] if stock.news else []
-                    except: temp_news[ticker] = []
+                    # --- NEWS ABFRAGE VIA GOOGLE ---
+                    temp_news[ticker] = get_google_news(clean_name)
+                    
         except Exception: continue
         
         if not auto_refresh: progress_bar.progress((i + 1) / total_tickers)
@@ -215,8 +242,7 @@ if st.session_state['scan_results']:
                 num = float(val.replace('%', '').replace('+', '').strip())
                 return 'color: green' if num > 0 else 'color: red'
             except: return ''
-        if isinstance(val, (int, float)):
-            return 'color: green' if val > 0 else 'color: red'
+        if isinstance(val, (int, float)): return 'color: green' if val > 0 else 'color: red'
         return ''
 
     def style_trend(val):
@@ -241,7 +267,6 @@ if st.session_state['scan_results']:
         except: pass
         return ''
 
-    # WICHTIG: Optimierte Spaltenreihenfolge
     display_cols = ["Name", "Kurs", "Analysten-Ziel", "Potenzial %", "Tages-Trend", "RSI (14)", "Trend-Signal", "Umsatz-Wachst.", "Gewinn-Wachst.", "PEG", "Bewertung"]
     
     st.dataframe(df_res[display_cols].style
@@ -252,16 +277,13 @@ if st.session_state['scan_results']:
                     .applymap(style_percent_color, subset=['Tages-Trend', 'Umsatz-Wachst.', 'Gewinn-Wachst.', 'Potenzial %']), 
                     use_container_width=True)
     
-    # --- CHART-ANALYSE (FIX) ---
+    # --- CHART-ANALYSE ---
     st.divider()
     st.subheader("📉 Profi-Chart")
-    
     ticker_list = [r['Kürzel'] for r in results] if results else []
-    # FIX: Key hinzugefügt, damit Auswahl stabil bleibt
     selected_ticker = st.selectbox("Aktie auswählen:", ticker_list, key="chart_select") if ticker_list else None
     
     if selected_ticker:
-        # Chart immer volle Breite
         chart_stock = yf.Ticker(selected_ticker)
         chart_df = chart_stock.history(period="2y")
         if not chart_df.empty:
@@ -271,7 +293,6 @@ if st.session_state['scan_results']:
             chart_df['Unteres Band'] = chart_df['SMA_20'] - (chart_df['Std_Dev'] * 2)
             chart_df['SMA 200'] = chart_df['Close'].rolling(window=200).mean()
             chart_df['SMA 50'] = chart_df['Close'].rolling(window=50).mean()
-            
             plot_df = chart_df.iloc[-250:].copy()
             st.line_chart(plot_df[['Close', 'Oberes Band', 'Unteres Band', 'SMA 200', 'SMA 50']])
             
@@ -286,24 +307,22 @@ if st.session_state['scan_results']:
             rsi_plot['30'] = 30
             st.line_chart(rsi_plot[['RSI', '70', '30']], color=["#0000FF", "#FF0000", "#00FF00"])
 
-    # --- NEWS (Unter dem Chart) ---
+    # --- NEWS (Google News) ---
     st.divider()
-    st.subheader("📰 News")
+    st.subheader("📰 Google News Ticker")
     if news_data and selected_ticker:
-        # Nur News zur ausgewählten Aktie anzeigen
         articles = news_data.get(selected_ticker, [])
         if articles:
             for item in articles:
-                t = item.get('title') or "News"
-                l = item.get('link') or f"https://de.finance.yahoo.com/quote/{selected_ticker}"
-                pub = item.get('publisher') or "Yahoo"
-                st.markdown(f"• **[{t}]({l})** ({pub})")
+                # Datum schön formatieren falls vorhanden
+                pub_date = item.get('published', '')[:16] # Schneidet lange Datum-Strings ab
+                st.markdown(f"• **[{item['title']}]({item['link']})**")
+                st.caption(f"{item['publisher']} | {pub_date}")
         else:
-            st.info(f"Keine direkten News für {selected_ticker} gefunden.")
+            st.info(f"Keine Google News gefunden. [Suche auf Google News](https://www.google.com/search?q={selected_ticker}+Aktie&tbm=nws)")
     elif news_data:
         st.caption("Wähle oben eine Aktie im Chart aus, um News zu sehen.")
 
-# AUTO REFRESH LOOP
 if auto_refresh:
     time.sleep(60)
     st.rerun()
