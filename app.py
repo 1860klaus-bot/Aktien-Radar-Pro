@@ -7,7 +7,7 @@ import urllib.parse
 from datetime import datetime
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (Google News & Charts)")
+st.title("💎 Aktien-Radar: Global (Charts, News & Experten)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -36,43 +36,39 @@ WKN_MAP = {
     "860853": "DIS", "DISNEY": "DIS", "850517": "JPM", "JP MORGAN": "JPM", "A0YJQ2": "BRK-B", "BERKSHIRE": "BRK-B"
 }
 
-# --- HELPER: GOOGLE NEWS FETCH ---
+# --- HELPER: NEWS FETCH ---
 def get_google_news(query_term):
-    """Holt echte Nachrichten via Google News RSS"""
+    """Holt Nachrichten via Google News RSS"""
     try:
-        # Wir suchen spezifisch auf Google News Deutschland
-        search_query = urllib.parse.quote(query_term)
+        search_query = urllib.parse.quote(f"{query_term} Aktie")
         rss_url = f"https://news.google.com/rss/search?q={search_query}&hl=de&gl=DE&ceid=DE:de"
-        
         feed = feedparser.parse(rss_url)
         news_items = []
-        
-        for entry in feed.entries[:5]: 
+        for entry in feed.entries[:3]: 
             pub_date = entry.published if hasattr(entry, 'published') else ""
             if len(pub_date) > 16: pub_date = pub_date[:16]
-            
-            news_items.append({
-                'title': entry.title,
-                'link': entry.link,
-                'publisher': entry.source.title if hasattr(entry, 'source') else "Google News",
-                'published': pub_date
-            })
+            news_items.append({'title': entry.title, 'link': entry.link, 'publisher': entry.source.title, 'published': pub_date})
         return news_items
-    except:
-        return []
+    except: return []
+
+def get_waldhauser_feed():
+    """Holt den echten RSS Feed von High-Tech-Investing"""
+    try:
+        feed = feedparser.parse("https://high-tech-investing.de/feed/")
+        news_items = []
+        for entry in feed.entries[:5]:
+            news_items.append({'title': entry.title, 'link': entry.link, 'published': entry.published[:16]})
+        return news_items
+    except: return []
 
 # --- 2. SEITENLEISTE MIT LOGIK ---
 st.sidebar.header("1. Listen laden")
 if 'ticker_text' not in st.session_state:
     st.session_state['ticker_text'] = FAVORITEN_LISTE
 
-# Initialisiere Session State
-if 'scan_results' not in st.session_state:
-    st.session_state['scan_results'] = None
-if 'scan_news' not in st.session_state:
-    st.session_state['scan_news'] = {}
-if 'last_update' not in st.session_state:
-    st.session_state['last_update'] = None
+if 'scan_results' not in st.session_state: st.session_state['scan_results'] = None
+if 'scan_news' not in st.session_state: st.session_state['scan_news'] = {}
+if 'last_update' not in st.session_state: st.session_state['last_update'] = None
 
 col1, col2 = st.sidebar.columns(2)
 with col1:
@@ -93,10 +89,9 @@ st.sidebar.header("3. Steuerung")
 rsi_limit = st.sidebar.slider("Max. RSI (14 Tage)", 10, 100, 87)
 auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=False)
 
-# NEU: EXPERTEN SECTION
-st.sidebar.header("4. Experten-Radar")
-show_waldhauser = st.sidebar.checkbox("🧠 Stefan Waldhauser (HGI)", value=False)
-show_szew = st.sidebar.checkbox("🐻 Szew (Mateusz Szewczyk)", value=False)
+# EXPERTEN SEKTION
+st.sidebar.header("4. Experten & Wikifolios")
+show_experts = st.sidebar.checkbox("🧠 Experten-Analysen anzeigen", value=True)
 
 # --- 3. HAUPTPROGRAMM ---
 
@@ -130,7 +125,6 @@ if should_scan:
             df_hist = stock.history(period="300d")
             
             if not df_hist.empty and len(df_hist) > 200:
-                # RSI & Trends
                 delta = df_hist['Close'].diff()
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
@@ -166,27 +160,22 @@ if should_scan:
                 info = stock.info
                 name = info.get('shortName') or info.get('longName') or ticker
                 currency = info.get('currency', '?')
-                
                 clean_name = name.replace(" Inc.", "").replace(" Corporation", "").replace(" SE", "").replace(" AG", "").split(" ")[0]
                 
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
-                
                 rev_growth = info.get('revenueGrowth', 0) 
                 earn_growth = info.get('earningsGrowth', 0)
                 peg_ratio = info.get('pegRatio') or info.get('trailingPegRatio')
-                
                 status = "Unterbewertet" if (upside > 15 and rsi_val < 45) else "Neutral"
                 if upside < 0: status = "Überbewertet"
 
                 if rsi_val <= rsi_limit:
                     peg_display = round(peg_ratio, 2) if peg_ratio else "N/A"
                     if peg_ratio is None and info.get('forwardPE', -1) < 0: peg_display = "Verlust"
-                    
                     growth_display = f"{round(rev_growth * 100, 1)}%" if rev_growth else "N/A"
                     earn_growth_display = f"{round(earn_growth * 100, 1)}%" if earn_growth else "N/A"
                     target_display = f"{round(target, 2)} {currency}" if target else "N/A"
-                    
                     trend_sign = "+" if change_pct > 0 else ""
                     d50_sign = "+" if dist_50 > 0 else ""
                     d200_sign = "+" if dist_200 > 0 else ""
@@ -204,10 +193,7 @@ if should_scan:
                         "Abst. SMA200": f"{d200_sign}{round(dist_200, 1)}%",
                         "Bid (VK)": bid_display, "Ask (Kauf)": ask_display
                     })
-                    
-                    # --- NEWS ABFRAGE (Aktie) ---
-                    temp_news[ticker] = get_google_news(f"{clean_name} Aktie")
-                    
+                    temp_news[ticker] = get_google_news(clean_name)
         except Exception: continue
         
         if not auto_refresh: progress_bar.progress((i + 1) / total_tickers)
@@ -301,31 +287,39 @@ if st.session_state['scan_results']:
             rsi_plot['30'] = 30
             st.line_chart(rsi_plot[['RSI', '70', '30']], color=["#0000FF", "#FF0000", "#00FF00"])
 
+    # --- EXPERTEN SECTION (NEU) ---
+    if show_experts:
+        st.divider()
+        st.subheader("🧠 Experten-Analysen & Wikifolios")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.info("📊 **Stefan Waldhauser (HGI)**")
+            st.markdown("[👉 Zur aktuellen Kaufliste (Wikifolio)](https://www.wikifolio.com/de/de/w/wf00000hgi)")
+            st.write("**Neueste Blog-Artikel:**")
+            wh_news = get_waldhauser_feed() # Echter Blog Feed
+            if wh_news:
+                for item in wh_news:
+                    st.markdown(f"• [{item['title']}]({item['link']})")
+            else:
+                st.caption("Keine neuen Artikel geladen.")
+
+        with col2:
+            st.info("🐻 **Szew (Mateusz Szewczyk)**")
+            st.markdown("[👉 Zur aktuellen Kaufliste (Wikifolio)](https://www.wikifolio.com/de/de/p/szewczyk)")
+            st.write("**Aktuelles im Netz:**")
+            # Für Szew nutzen wir Google News, da er keinen einfachen RSS hat
+            sz_news = get_google_news("Mateusz Szewczyk")
+            if sz_news:
+                for item in sz_news:
+                    st.markdown(f"• [{item['title']}]({item['link']})")
+            else:
+                st.caption("Keine aktuellen Nachrichten gefunden.")
+
+    # --- AKTIEN NEWS ---
     st.divider()
-    st.subheader("📰 Google News Ticker")
-    
-    # --- EXPERTEN NEWS ---
-    if show_waldhauser:
-        st.info("🧠 **News: Stefan Waldhauser / HGI**")
-        wh_news = get_google_news("Stefan Waldhauser")
-        if wh_news:
-            for item in wh_news:
-                st.markdown(f"• **[{item['title']}]({item['link']})** ({item['published']})")
-        else:
-            st.caption("Keine aktuellen Nachrichten gefunden.")
-        st.divider()
-
-    if show_szew:
-        st.info("🐻 **News: Mateusz Szewczyk / Szew**")
-        sz_news = get_google_news("Mateusz Szewczyk Aktien")
-        if sz_news:
-            for item in sz_news:
-                st.markdown(f"• **[{item['title']}]({item['link']})** ({item['published']})")
-        else:
-            st.caption("Keine aktuellen Nachrichten gefunden.")
-        st.divider()
-
-    # --- NORMALE AKTIEN NEWS ---
+    st.subheader("📰 News zur ausgewählten Aktie")
     if news_data and selected_ticker:
         articles = news_data.get(selected_ticker, [])
         if articles:
@@ -334,9 +328,7 @@ if st.session_state['scan_results']:
                 st.markdown(f"• **[{item['title']}]({item['link']})**")
                 st.caption(f"{item['publisher']} | {pub_date}")
         else:
-            st.info(f"Keine Google News gefunden. [Suche auf Google News](https://www.google.com/search?q={selected_ticker}+Aktie&tbm=nws)")
-    elif news_data:
-        st.caption("Wähle oben eine Aktie im Chart aus, um News zu sehen.")
+            st.info(f"Keine Google News. [Suche starten](https://www.google.com/search?q={selected_ticker}+Aktie&tbm=nws)")
 
 if auto_refresh:
     time.sleep(60)
