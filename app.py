@@ -267,9 +267,47 @@ if st.session_state.scan_results:
         with c1:
             hist_obj = yf.Ticker(active_sym)
             hist_d = hist_obj.history(period="1y")
-            fig = go.Figure(data=[go.Candlestick(x=hist_d.index, open=hist_d['Open'], high=hist_d['High'], low=hist_d['Low'], close=hist_d['Close'])])
-            fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0))
+            
+            # Indikatoren-Auswahl
+            selected_indicators = st.multiselect(
+                "Technische Indikatoren wählen:",
+                ["Bollinger Bänder", "SMA 20", "SMA 50", "SMA 200"],
+                default=["SMA 50", "SMA 200"]
+            )
+            
+            fig = go.Figure(data=[go.Candlestick(
+                x=hist_d.index, open=hist_d['Open'], high=hist_d['High'], low=hist_d['Low'], close=hist_d['Close'],
+                name="Kurs"
+            )])
+            
+            # SMA 20
+            if "SMA 20" in selected_indicators:
+                sma20 = hist_d['Close'].rolling(window=20).mean()
+                fig.add_trace(go.Scatter(x=hist_d.index, y=sma20, line=dict(color='yellow', width=1), name="SMA 20"))
+            
+            # SMA 50
+            if "SMA 50" in selected_indicators:
+                sma50 = hist_d['Close'].rolling(window=50).mean()
+                fig.add_trace(go.Scatter(x=hist_d.index, y=sma50, line=dict(color='cyan', width=1.5), name="SMA 50"))
+                
+            # SMA 200
+            if "SMA 200" in selected_indicators:
+                sma200 = hist_d['Close'].rolling(window=200).mean()
+                fig.add_trace(go.Scatter(x=hist_d.index, y=sma200, line=dict(color='red', width=2), name="SMA 200"))
+                
+            # Bollinger Bänder
+            if "Bollinger Bänder" in selected_indicators:
+                sma_bb = hist_d['Close'].rolling(window=20).mean()
+                std_bb = hist_d['Close'].rolling(window=20).std()
+                upper_bb = sma_bb + (std_bb * 2)
+                lower_bb = sma_bb - (std_bb * 2)
+                
+                fig.add_trace(go.Scatter(x=hist_d.index, y=upper_bb, line=dict(color='rgba(173, 216, 230, 0.4)', width=1), name="BB Oben"))
+                fig.add_trace(go.Scatter(x=hist_d.index, y=lower_bb, line=dict(color='rgba(173, 216, 230, 0.4)', width=1), fill='tonexty', fillcolor='rgba(173, 216, 230, 0.1)', name="BB Unten"))
+
+            fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark", height=500, margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig, use_container_width=True)
+            
         with c2:
             detail_i = yf.Ticker(active_sym).info
             st.metric("Forward KGV", detail_i.get('forwardPE', '-'))
