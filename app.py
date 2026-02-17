@@ -299,7 +299,6 @@ if st.session_state.scan_results:
         with col1:
             st.info("📊 **Stefan Waldhauser (HGI)**")
             c1, c2 = st.columns(2)
-            # AKTUALISIERTER LINK
             c1.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf0stwtech")
             c2.link_button("📝 Zum Blog", "https://high-tech-investing.de")
             wh_news = get_rss_feed("https://high-tech-investing.de/feed/")
@@ -309,7 +308,8 @@ if st.session_state.scan_results:
         with col2:
             st.info("🐻 **Szew (Mateusz Szewczyk)**")
             c3, c4 = st.columns(2)
-            c3.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf000szew1")
+            # AKTUALISIERTER LINK
+            c3.link_button("📈 Zum Wikifolio", "https://www.wikifolio.com/de/de/w/wf00szew01")
             c4.link_button("📝 Zum Substack", "https://szew.substack.com")
             sz_news = get_rss_feed("https://szew.substack.com/feed")
             if sz_news:
