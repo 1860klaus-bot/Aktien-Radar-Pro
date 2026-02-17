@@ -12,14 +12,13 @@ from firebase_admin import credentials, firestore
 # --- 1. FIREBASE INITIALISIERUNG ---
 @st.cache_resource
 def get_db_connection():
-    """Stellt die Verbindung zur Cloud-Datenbank (Firestore) her."""
+    """Initialisiert Firebase mit expliziter Projekt-ID aus der Konfiguration."""
     if not firebase_admin._apps:
         try:
             config_str = globals().get("__firebase_config")
             if config_str:
                 config = json.loads(config_str)
                 cred = credentials.Certificate(config)
-                # Projekt-ID explizit setzen, um Fehler in der Cloud zu vermeiden
                 firebase_admin.initialize_app(cred, {
                     'projectId': config.get('project_id'),
                 })
@@ -27,7 +26,7 @@ def get_db_connection():
                 firebase_admin.initialize_app()
             return firestore.client()
         except Exception as e:
-            st.sidebar.error(f"Datenbank-Fehler: {e}")
+            st.sidebar.error(f"Datenbank-Initialisierung fehlgeschlagen: {e}")
             return None
     return firestore.client()
 
@@ -37,7 +36,6 @@ user_id = "default_user"
 
 # --- 2. PERSISTENZ-FUNKTIONEN ---
 def save_favorites_to_db(ticker_string):
-    """Speichert die Ticker-Liste dauerhaft in der Cloud."""
     if not db: return
     try:
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
@@ -47,7 +45,6 @@ def save_favorites_to_db(ticker_string):
         st.sidebar.error(f"Speichern fehlgeschlagen: {e}")
 
 def load_favorites_from_db():
-    """Lädt die gespeicherten Favoriten beim Start."""
     if not db: return "NVDA, TSLA, AAPL, SAP.DE"
     try:
         doc_ref = db.collection("artifacts").document(app_id).collection("users").document(user_id).collection("settings").document("favorites")
@@ -57,10 +54,18 @@ def load_favorites_from_db():
     except: pass
     return "NVDA, TSLA, AAPL, SAP.DE"
 
-# --- 3. DATEN-LISTEN (VORLAGEN) ---
-HGI_LIST = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP"
-SZEW_LIST = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
-DAX_LIST = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, DHL.DE"
+# --- 3. DATEN-LISTEN (INDIZES) ---
+HGI_TICKERS = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP"
+SZEW_TICKERS = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
+
+DAX_LISTE = "SAP.DE, SIE.DE, ALV.DE, MBG.DE, VOW3.DE, DTE.DE, BAS.DE, BAYN.DE, BMW.DE, ADS.DE, IFX.DE, RHM.DE, TUI1.DE, LHA.DE, DHL.DE, BEI.DE, CON.DE, CBK.DE, DBK.DE, RWE.DE"
+MDAX_LISTE = "PUM.DE, HNR1.DE, LEG.DE, EVK.DE, KES.DE, KGX.DE, AFX.DE, FPE3.DE, HEI.DE, JUN3.DE"
+SDAX_LISTE = "SDF.DE, GFG.DE, BC8.DE, MOR.DE, ADV.DE, HDD.DE, HHFA.DE, EUZ.DE"
+
+SP500_TOP = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, BRK-B, LLY, AVGO, JPM, UNH, V, XOM, MA, PG, COST"
+NASDAQ_100 = "AAPL, MSFT, AMZN, NVDA, GOOGL, META, TSLA, AVGO, PEP, COST, ADBE, AMD, NFLX, PLTR, COIN"
+DOW_JONES = "UNH, GS, HD, MSFT, CRM, AMGN, V, CAT, MCD, BA, VZ, DIS, KO, JPM"
+GLOBAL_TOP = "AAPL, MSFT, NVDA, SAP.DE, SIE.DE, ALV.DE, KO, MCD, V, JPM, NOVO-B.CO, ASML.AS"
 
 # --- 4. APP KONFIGURATION ---
 st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide")
@@ -70,21 +75,61 @@ if 'ticker_input' not in st.session_state:
 if 'scan_results' not in st.session_state:
     st.session_state.scan_results = None
 
-# SEITENLEISTE
-st.sidebar.header("⚙️ Konfiguration")
-if db:
-    st.sidebar.caption("🟢 Cloud-Speicher aktiv")
-else:
-    st.sidebar.caption("🔴 Cloud-Speicher offline")
+# --- STYLING FUNKTIONEN ---
+def color_growth(val):
+    try:
+        v = float(str(val).replace('%', '').replace('+', ''))
+        return 'color: #00ff00' if v > 0 else 'color: #ff4b4b' if v < 0 else ''
+    except: return ''
 
-with st.sidebar.expander("📊 Schnell-Listen laden", expanded=False):
-    if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LIST
-    if st.button("HGI (Waldhauser)", use_container_width=True): st.session_state.ticker_input = HGI_LIST
-    if st.button("Szew (Weishar)", use_container_width=True): st.session_state.ticker_input = SZEW_LIST
+def color_rsi(val):
+    try:
+        color = 'lightgreen' if val <= 35 else 'tomato' if val >= 70 else 'white'
+        return f'background-color: {color}; color: black' if color != 'white' else ''
+    except: return ''
+
+def color_debt(val):
+    try:
+        if val < 0: return 'background-color: rgba(0, 255, 0, 0.1); color: #00ff00'
+        if val > 0: return 'background-color: rgba(255, 75, 75, 0.1); color: #ff4b4b'
+    except: pass
+    return ''
+
+def color_valuation(val):
+    if val == "Unterbewertet": return 'background-color: #006400; color: white'
+    if val == "Günstig": return 'background-color: #90EE90; color: black'
+    if val == "Überbewertet": return 'background-color: #8B0000; color: white'
+    return ''
+
+def format_currency(val):
+    if val is None or pd.isna(val): return "-"
+    abs_val = abs(val)
+    if abs_val >= 1_000_000_000: return f"{val / 1_000_000_000:.2f} Mrd"
+    elif abs_val >= 1_000_000: return f"{val / 1_000_000:.2f} Mio"
+    return str(round(val, 2))
+
+# --- 5. SEITENLEISTE ---
+st.sidebar.header("⚙️ Konfiguration")
+
+with st.sidebar.expander("🇩🇪 Deutsche Indizes", expanded=False):
+    if st.button("DAX 40", use_container_width=True): st.session_state.ticker_input = DAX_LISTE
+    if st.button("MDAX", use_container_width=True): st.session_state.ticker_input = MDAX_LISTE
+    if st.button("SDAX", use_container_width=True): st.session_state.ticker_input = SDAX_LISTE
+
+with st.sidebar.expander("🇺🇸 US Indizes", expanded=False):
+    if st.button("S&P 500 (Top)", use_container_width=True): st.session_state.ticker_input = SP500_TOP
+    if st.button("Nasdaq 100", use_container_width=True): st.session_state.ticker_input = NASDAQ_100
+    if st.button("Dow Jones 30", use_container_width=True): st.session_state.ticker_input = DOW_JONES
+
+with st.sidebar.expander("🧠 Experten & Favoriten", expanded=True):
+    col_e1, col_e2 = st.columns(2)
+    if col_e1.button("HGI", use_container_width=True): st.session_state.ticker_input = HGI_TICKERS
+    if col_e2.button("Szew", use_container_width=True): st.session_state.ticker_input = SZEW_TICKERS
+    if st.button("🌍 Global Top", use_container_width=True): st.session_state.ticker_input = GLOBAL_TOP
 
 st.sidebar.divider()
 st.sidebar.subheader("⭐ Meine Favoriten")
-ticker_text = st.sidebar.text_area("Ticker (Kürzel mit Komma):", value=st.session_state.ticker_input, height=150)
+ticker_text = st.sidebar.text_area("Ticker-Liste:", value=st.session_state.ticker_input, height=120)
 st.session_state.ticker_input = ticker_text
 
 if st.sidebar.button("💾 Liste dauerhaft speichern", use_container_width=True):
@@ -97,7 +142,7 @@ st.sidebar.divider()
 rsi_limit = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
 auto_refresh = st.sidebar.toggle("⏱️ Automatischer Scan (60s)", value=False)
 
-# --- 5. CORE SCANNER ---
+# --- 6. CORE SCANNER ---
 st.title("💎 Aktien-Radar Pro")
 
 @st.cache_data(ttl=300)
@@ -114,7 +159,7 @@ def fetch_stock_data(symbols_tuple, rsi_max):
             h = t.history(period="60d")
             if h.empty or len(h) < 20: continue
             
-            # RSI Berechnung (14 Tage)
+            # RSI 14
             delta = h['Close'].diff()
             up = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
             down = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
@@ -125,26 +170,31 @@ def fetch_stock_data(symbols_tuple, rsi_max):
                 p = info.get('currentPrice') or h['Close'].iloc[-1]
                 prev = info.get('previousClose', p)
                 
-                # Fundamentale Metriken
+                # Wachstumsdaten
+                rev_growth = info.get('revenueGrowth', 0)
+                earn_growth = info.get('earningsGrowth', 0)
+                
+                # Cashflow & PEG
                 peg = info.get('pegRatio') or info.get('trailingPegRatio') or "-"
                 fcf = info.get('freeCashflow')
                 mcap = info.get('marketCap')
                 fcf_yield = (fcf/mcap*100) if fcf and mcap else 0
                 
+                # Verschuldung
                 cash = info.get('totalCash')
                 debt = info.get('totalDebt')
                 net_debt = (debt - cash) if (debt is not None and cash is not None) else info.get('netDebt')
                 
+                # Analysten
                 target = info.get('targetMeanPrice')
                 potential = ((target - p) / p * 100) if target else 0
                 
-                # Mapping der Analysten-Empfehlungen
-                raw_rating = info.get('recommendationKey', '-')
-                rating_map = {
-                    'strong_buy': 'Starker Kauf', 'buy': 'Kauf',
-                    'hold': 'Halten', 'underperform': 'Verkauf', 'sell': 'Starker Verkauf'
-                }
-                display_rating = rating_map.get(raw_rating, raw_rating.capitalize())
+                # Bewertung Logik
+                bewertung = "Neutral"
+                if peg and isinstance(peg, (int, float)):
+                    if peg < 1.0 and potential > 15: bewertung = "Unterbewertet"
+                    elif (peg < 1.5 or fcf_yield > 5) and rsi < 45: bewertung = "Günstig"
+                    elif peg > 2.2 or rsi > 75: bewertung = "Überbewertet"
                 
                 results.append({
                     "Name": info.get('shortName', sym),
@@ -154,11 +204,14 @@ def fetch_stock_data(symbols_tuple, rsi_max):
                     "Ask": info.get('ask', '-'),
                     "Heute %": round(((p-prev)/prev)*100, 2),
                     "RSI": round(rsi, 1),
-                    "PEG": peg if peg == "-" else round(float(peg), 2),
+                    "Umsatz-Wachst. %": round(rev_growth * 100, 1) if rev_growth else 0,
+                    "Gewinn-Wachst. %": round(earn_growth * 100, 1) if earn_growth else 0,
+                    "PEG": round(peg, 2) if isinstance(peg, (int, float)) else "-",
                     "FCF Yield %": round(fcf_yield, 1),
-                    "Netto-Schulden": net_debt,
-                    "Rating": display_rating,
-                    "Potential %": round(potential, 1)
+                    "Netto-Schuld": net_debt,
+                    "Rating": info.get('recommendationKey', '-').replace('_', ' ').capitalize(),
+                    "Potential %": round(potential, 1),
+                    "Bewertung": bewertung
                 })
         except: continue
         bar.progress((i + 1) / len(symbols))
@@ -174,66 +227,57 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
         st.session_state.scan_results = data
         st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
 
-# --- 6. ANZEIGE DER ERGEBNISSE ---
+# --- 7. ANZEIGE ---
 if st.session_state.scan_results:
-    st.caption(f"Letztes Update: {st.session_state.last_update}")
+    st.write(f"Zuletzt aktualisiert: **{st.session_state.last_update}**")
     df = pd.DataFrame(st.session_state.scan_results)
     
-    # Formatierungsfunktionen
-    def color_growth(val):
-        try:
-            v = float(val)
-            return 'color: #00ff00' if v > 0 else 'color: #ff4b4b' if v < 0 else ''
-        except: return ''
-
-    def color_debt(val):
-        try:
-            if val < 0: return 'background-color: rgba(0, 255, 0, 0.1); color: #00ff00'
-            if val > 0: return 'background-color: rgba(255, 75, 75, 0.1); color: #ff4b4b'
-        except: pass
-        return ''
-
-    styled_df = df.style.applymap(color_growth, subset=['Heute %', 'Potential %', 'FCF Yield %'])\
-                        .applymap(color_debt, subset=['Netto-Schulden'])
+    styled_df = df.style.applymap(color_growth, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-Wachst. %', 'Gewinn-Wachst. %'])\
+                        .applymap(color_rsi, subset=['RSI'])\
+                        .applymap(color_debt, subset=['Netto-Schuld'])\
+                        .applymap(color_valuation, subset=['Bewertung'])\
+                        .format({
+                            "Heute %": "{:+.2f}%", "Potential %": "{:+.1f}%", "Umsatz-Wachst. %": "{:+.1f}%", 
+                            "Gewinn-Wachst. %": "{:+.1f}%", "FCF Yield %": "{:.1f}%",
+                            "Netto-Schuld": lambda x: format_currency(x)
+                        })
     
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
     
     st.divider()
     
     # DETAIL ANALYSE
-    st.subheader("📉 Detail-Analyse & Charts")
-    selected = st.selectbox("Wähle eine Aktie aus dem Scan:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
+    st.subheader("📉 Detail-Analyse & Zukunftsausblick")
+    selected = st.selectbox("Aktie wählen:", [f"{r['Name']} ({r['Symbol']})" for r in st.session_state.scan_results])
     active_sym = selected.split("(")[-1].replace(")", "")
     
     if active_sym:
         st.subheader(f"Analyse: {selected}")
         c1, c2 = st.columns([2, 1])
         with c1:
-            stock_obj = yf.Ticker(active_sym)
-            hist_data = stock_obj.history(period="1y")
-            fig = go.Figure(data=[go.Candlestick(x=hist_data.index, open=hist_data['Open'], high=hist_data['High'], low=hist_data['Low'], close=hist_data['Close'])])
+            hist_obj = yf.Ticker(active_sym)
+            hist_d = hist_obj.history(period="1y")
+            fig = go.Figure(data=[go.Candlestick(x=hist_d.index, open=hist_d['Open'], high=hist_d['High'], low=hist_d['Low'], close=hist_d['Close'])])
             fig.update_layout(xaxis_rangeslider_visible=False, template="plotly_dark", height=450, margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            detail_info = stock_obj.info
-            st.metric("Forward KGV", detail_info.get('forwardPE', '-'))
-            st.metric("EBITDA Marge", f"{detail_info.get('ebitdaMargins', 0)*100:.1f}%" if detail_info.get('ebitdaMargins') else "-")
+            detail_i = yf.Ticker(active_sym).info
+            st.metric("Forward KGV", detail_i.get('forwardPE', '-'))
+            st.metric("EBITDA Marge", f"{detail_i.get('ebitdaMargins', 0)*100:.1f}%" if detail_i.get('ebitdaMargins') else "-")
             st.write("**Unternehmensprofil:**")
-            st.caption(detail_info.get('longBusinessSummary', "Keine Info verfügbar.")[:600] + "...")
+            st.caption(detail_i.get('longBusinessSummary', "Keine Info verfügbar.")[:600] + "...")
 
-# RSS NEWS
+# RSS FEEDS
 st.divider()
 col_l, col_r = st.columns(2)
 with col_l:
     st.info("📊 **Stefan Waldhauser (HGI)**")
     feed_hgi = feedparser.parse("https://hightechinvesting.substack.com/feed")
-    for entry in feed_hgi.entries[:3]:
-        st.markdown(f"• [{entry.title}]({entry.link})")
+    for entry in feed_hgi.entries[:3]: st.markdown(f"• [{entry.title}]({entry.link})")
 with col_r:
     st.info("🐻 **Simon Weishar (Szew)**")
     feed_szew = feedparser.parse("https://szew.substack.com/feed")
-    for entry in feed_szew.entries[:3]:
-        st.markdown(f"• [{entry.title}]({entry.link})")
+    for entry in feed_szew.entries[:3]: st.markdown(f"• [{entry.title}]({entry.link})")
 
 if auto_refresh:
     time.sleep(60)
