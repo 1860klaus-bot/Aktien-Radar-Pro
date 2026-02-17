@@ -7,7 +7,7 @@ import urllib.parse
 from datetime import datetime
 
 st.set_page_config(page_title="Aktien-Radar Global", page_icon="🌍", layout="wide")
-st.title("💎 Aktien-Radar: Global (Google News Integration)")
+st.title("💎 Aktien-Radar: Global (Google News & Charts)")
 
 # --- 1. DATENBANKEN ---
 DAX_LISTE = "716460, 723610, 840400, 710000, 766403, 555750, BASF11, BAY001, 519000, 514000, 623100, ENAG99, A1EWWW, 543900, CBK100, 581005, DTR0CK, 604843, 843002, PAG911, 703712, SHL100, A1ML7J, 938914"
@@ -95,7 +95,8 @@ auto_refresh = st.sidebar.toggle("⏱️ Live-Modus (60s Auto-Update)", value=Fa
 
 # NEU: EXPERTEN SECTION
 st.sidebar.header("4. Experten-Radar")
-show_schmale = st.sidebar.checkbox("📰 Clemens Schmale News", value=False)
+show_waldhauser = st.sidebar.checkbox("🧠 Stefan Waldhauser (HGI)", value=False)
+show_szew = st.sidebar.checkbox("🐻 Szew (Mateusz Szewczyk)", value=False)
 
 # --- 3. HAUPTPROGRAMM ---
 
@@ -303,15 +304,25 @@ if st.session_state['scan_results']:
     st.divider()
     st.subheader("📰 Google News Ticker")
     
-    # --- EXPERTEN NEWS ANZEIGEN ---
-    if show_schmale:
-        st.info("📢 **Extra: Nachrichten von Clemens Schmale / Aktionär**")
-        expert_news = get_google_news("Clemens Schmale Aktionär")
-        if expert_news:
-            for item in expert_news:
+    # --- EXPERTEN NEWS ---
+    if show_waldhauser:
+        st.info("🧠 **News: Stefan Waldhauser / HGI**")
+        wh_news = get_google_news("Stefan Waldhauser")
+        if wh_news:
+            for item in wh_news:
                 st.markdown(f"• **[{item['title']}]({item['link']})** ({item['published']})")
         else:
-            st.caption("Keine spezifischen Nachrichten zu Clemens Schmale gefunden.")
+            st.caption("Keine aktuellen Nachrichten gefunden.")
+        st.divider()
+
+    if show_szew:
+        st.info("🐻 **News: Mateusz Szewczyk / Szew**")
+        sz_news = get_google_news("Mateusz Szewczyk Aktien")
+        if sz_news:
+            for item in sz_news:
+                st.markdown(f"• **[{item['title']}]({item['link']})** ({item['published']})")
+        else:
+            st.caption("Keine aktuellen Nachrichten gefunden.")
         st.divider()
 
     # --- NORMALE AKTIEN NEWS ---
