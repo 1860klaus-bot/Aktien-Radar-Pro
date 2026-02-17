@@ -19,12 +19,12 @@ st.title("💎 Aktien-Radar: Global (News & Experten)")
 # --- 1. DATENBANKEN (WIKIFOLIO WERTE & LINKS) ---
 
 # 🟢 STEFAN WALDHAUSER (HGI) - High-Tech Stock Picking
-# Werte exakt aus deiner Liste (15 Aktien)
+# Die 15 Werte exakt aus deiner Liste
 HGI_PORTFOLIO = "IAC, ANGI, PYPL, MNDY, LYFT, ABNB, UPWK, UBER, PATH, TWLO, ESTC, GOOGL, PSTG, ANET, SHOP" 
 HGI_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf0stwtech"
 
 # 🔵 SIMON WEISHAR (SZEW) - Szew Grundinvestment
-# Basierend auf aktuellen Top-Holdings (wf00szew01)
+# Aktuelle Top-Holdings (Szew Grundinvestment / Data Driven)
 SZEW_PORTFOLIO = "ANGI, TRN.L, RMV.L, YOU.L, EUK.DE, MONY.L, OTB.L, NU, TTD"
 SZEW_WIKI_URL = "https://www.wikifolio.com/de/de/w/wf00szew01"
 
@@ -168,7 +168,8 @@ if should_scan:
                     else: trend_signal = "📉 Abwärtstrend"
                 
                 info = stock.info
-                name = info.get('shortName') or info.get('longName') or ticker
+                # Name robuster abrufen
+                full_name = info.get('longName') or info.get('shortName') or ticker
                 currency = info.get('currency', '?')
                 target = info.get('targetMeanPrice', 0)
                 upside = ((target - current_price) / current_price) * 100 if target and current_price else 0
@@ -180,14 +181,19 @@ if should_scan:
 
                 if rsi_val <= rsi_limit:
                     temp_results.append({
-                        "Name": name, "Kürzel": ticker, "Kurs": f"{round(live_price, 2)} {currency}",
-                        "Analysten-Ziel": f"{round(target, 2)} {currency}" if target else "N/A", "Potenzial %": round(upside, 1),
+                        "Name": full_name, 
+                        "Kürzel": ticker, 
+                        "Kurs": f"{round(live_price, 2)} {currency}",
+                        "Analysten-Ziel": f"{round(target, 2)} {currency}" if target else "N/A", 
+                        "Potenzial %": round(upside, 1),
                         "Tages-Trend": f"{'+' if change_pct > 0 else ''}{round(change_pct, 2)}%",
-                        "RSI (14)": round(float(rsi_val), 1), "Trend-Signal": trend_signal,
+                        "RSI (14)": round(float(rsi_val), 1), 
+                        "Trend-Signal": trend_signal,
                         "Umsatz-Wachst.": f"{round(rev_growth * 100, 1)}%" if rev_growth else "N/A",
-                        "PEG": round(peg_ratio, 2) if peg_ratio else "N/A", "Bewertung": status
+                        "PEG": round(peg_ratio, 2) if peg_ratio else "N/A", 
+                        "Bewertung": status
                     })
-                    temp_news[ticker] = get_google_news(name.split(" ")[0])
+                    temp_news[ticker] = get_google_news(full_name.split(" ")[0])
         except Exception: continue
         if not auto_refresh: progress_bar.progress((i + 1) / total_tickers)
             
@@ -218,12 +224,13 @@ if st.session_state.scan_results:
         return ''
 
     def style_trend(val):
-        if "GOLDENES" in str(val): return 'color: #006400; font-weight: bold' 
-        if "Abwärtstrend" in str(val) or "Todeskreuz" in str(val): return 'color: red'
+        if "GOLDENES" in str(val): return 'color: #006400; font-weight: bold; background-color: #e6ffe6' 
+        if "Abwärtstrend" in str(val) or "Todeskreuz" in str(val): return 'color: red; font-weight: bold'
         if "Aufwärtstrend" in str(val): return 'color: green'
         return ''
 
-    display_cols = ["Name", "Kurs", "Analysten-Ziel", "Potenzial %", "Tages-Trend", "RSI (14)", "Trend-Signal", "Umsatz-Wachst.", "PEG", "Bewertung"]
+    # Kürzel wurde hier explizit hinzugefügt
+    display_cols = ["Name", "Kürzel", "Kurs", "Analysten-Ziel", "Potenzial %", "Tages-Trend", "RSI (14)", "Trend-Signal", "Umsatz-Wachst.", "PEG", "Bewertung"]
     st.dataframe(df_res[display_cols].style
                     .applymap(style_trend, subset=['Trend-Signal'])
                     .applymap(style_percent_color, subset=['Tages-Trend', 'Potenzial %']), 
@@ -231,8 +238,10 @@ if st.session_state.scan_results:
     
     st.divider()
     st.subheader("📉 Profi-Chart")
-    ticker_list = [r['Kürzel'] for r in results]
-    selected_ticker = st.selectbox("Aktie auswählen:", ticker_list, key="chart_select")
+    # Hier werden Name + Kürzel für die Auswahl kombiniert
+    ticker_list = [f"{r['Name']} ({r['Kürzel']})" for r in results]
+    selected_option = st.selectbox("Aktie auswählen:", ticker_list, key="chart_select")
+    selected_ticker = selected_option.split("(")[-1].replace(")", "")
     
     if selected_ticker:
         chart_stock = yf.Ticker(selected_ticker)
