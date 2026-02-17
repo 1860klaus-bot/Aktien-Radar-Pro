@@ -87,7 +87,7 @@ st.set_page_config(page_title="Aktien-Radar Pro", page_icon="🌍", layout="wide
 if 'ticker_input' not in st.session_state:
     st.session_state.ticker_input = load_favorites_from_db()
 if 'scan_results' not in st.session_state:
-    st.session_results = None
+    st.session_state.scan_results = None
 
 # --- STYLING FUNKTIONEN ---
 def color_growth(val):
@@ -155,7 +155,8 @@ st.sidebar.link_button("🔍 aktien.guide öffnen", "https://aktien.guide", use_
 
 st.sidebar.divider()
 rsi_limit = st.sidebar.slider("RSI-Filter (Maximalwert)", 10, 100, 85)
-auto_refresh = st.sidebar.toggle("⏱️ Automatischer Scan (60s)", value=False)
+auto_refresh = st.sidebar.toggle("⏱️ Automatischer Scan", value=False)
+refresh_interval = st.sidebar.slider("Scan-Intervall (Sekunden)", 10, 300, 60)
 
 # --- 6. CORE SCANNER ---
 st.title("💎 Aktien-Radar Pro")
@@ -237,8 +238,8 @@ if st.button("🚀 Scanner starten", type="primary") or auto_refresh:
         st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
 
 # --- 7. ANZEIGE ---
-if st.session_state.scan_results:
-    st.write(f"Zuletzt aktualisiert: **{st.session_state.last_update}**")
+if st.session_state.get('scan_results'):
+    st.write(f"Zuletzt aktualisiert: **{st.session_state.get('last_update')}**")
     df = pd.DataFrame(st.session_state.scan_results)
     
     styled_df = df.style.applymap(color_growth, subset=['Heute %', 'Potential %', 'FCF Yield %', 'Umsatz-Wachst. %', 'Gewinn-Wachst. %'])\
@@ -322,5 +323,5 @@ with col_r:
     for entry in feed_szew.entries[:3]: st.markdown(f"• [{entry.title}]({entry.link})")
 
 if auto_refresh:
-    time.sleep(60)
+    time.sleep(refresh_interval)
     st.rerun()
